@@ -1,0 +1,28 @@
+{% extends "codoc_app/base.html" %}
+
+{% block title %}Logs — ePIC Code Documentation{% endblock %}
+
+{% block nav %}
+<nav><a href="{% url 'codoc:home' %}">Browse</a></nav>
+{% endblock %}
+
+{% block body %}
+<h1>Application Logs</h1>
+{% if logs %}
+<table class="queue">
+    <thead><tr><th>Time</th><th>Level</th><th>Source</th><th>Message</th></tr></thead>
+    <tbody>
+        {% for log in logs %}
+        <tr>
+            <td style="white-space:nowrap">{{ log.timestamp|date:"m-d H:i:s" }}</td>
+            <td><span class="status status-{% if log.levelname == 'ERROR' %}failed{% elif log.levelname == 'WARNING' %}queued{% else %}completed{% endif %}">{{ log.levelname }}</span></td>
+            <td>{{ log.source }}</td>
+            <td style="max-width:500px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ log.message|truncatewords:30 }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p class="empty">No log entries.</p>
+{% endif %}
+{% endblock %}

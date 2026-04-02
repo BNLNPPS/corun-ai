@@ -1,0 +1,68 @@
+{% extends "codoc_app/base.html" %}
+
+{% block title %}Prompts — ePIC Code Documentation{% endblock %}
+
+{% block page %}
+<div class="compose-wrap">
+    <div class="browse-panel">
+        <div class="browse-header">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                <span style="font-weight:600;font-size:13px">Prompts</span>
+                {% if user.is_authenticated %}<button class="btn" onclick="loadPromptEditor()">New</button>{% endif %}
+            </div>
+            <input type="text" class="browse-search" id="prompt-search" placeholder="Search...">
+        </div>
+        <div class="browse-list" id="prompt-list" tabindex="0">
+            {% for p in prompts %}
+            <div class="browse-item" data-id="{{ p.group_id }}" tabindex="-1">
+                <div class="browse-item-title">{{ p.content|truncatewords:12 }}</div>
+                <div class="browse-item-meta">v{{ p.version }} · {{ p.modified_at|date:"M j H:i" }} · {{ p.section.name }}</div>
+            </div>
+            {% empty %}
+            <div style="padding:12px;color:var(--grey);font-size:13px">No prompts yet.</div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="detail-panel">
+        <div class="panel-body" id="prompt-detail-body">
+            <div style="padding:2rem;color:var(--grey)"><p>Select a prompt or create a new one.</p></div>
+        </div>
+    </div>
+</div>
+
+<script>
+function setHTML(c, h) { c.innerHTML = h; c.querySelectorAll('script').forEach(old => { const s = document.createElement('script'); s.textContent = old.textContent; old.replaceWith(s); }); }
+
+function loadPromptView(gid) {
+    fetch('{% url "codoc:prompt_view_frag" "00000000-0000-0000-0000-000000000000" %}'.replace('00000000-0000-0000-0000-000000000000', gid))
+        .then(r => r.text()).then(h => setHTML(document.getElementById('prompt-detail-body'), h));
+}
+
+function loadPromptEditor(gid) {
+    const url = gid
+        ? '{% url "codoc:prompt_edit_frag" "00000000-0000-0000-0000-000000000000" %}'.replace('00000000-0000-0000-0000-000000000000', gid)
+        : '{% url "codoc:prompt_new_frag" %}';
+    fetch(url).then(r => r.text()).then(h => setHTML(document.getElementById('prompt-detail-body'), h));
+}
+
+const pItems = document.querySelectorAll('.browse-item');
+let pIdx = -1;
+function selectPItem(idx) {
+    pItems.forEach(i => i.classList.remove('selected'));
+    if (idx >= 0 && idx < pItems.length) { pIdx = idx; pItems[idx].classList.add('selected'); pItems[idx].scrollIntoView({block:'nearest'}); loadPromptView(pItems[idx].dataset.id); }
+}
+document.getElementById('prompt-list').addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); selectPItem(Math.min(pIdx+1, pItems.length-1)); }
+    if (e.key === 'ArrowUp') { e.preventDefault(); selectPItem(Math.max(pIdx-1, 0)); }
+});
+pItems.forEach((item, idx) => item.addEventListener('click', () => selectPItem(idx)));
+
+document.getElementById('prompt-search').addEventListener('input', function() {
+    const q = this.value.toLowerCase();
+    pItems.forEach(item => { item.style.display = item.querySelector('.browse-item-title').textContent.toLowerCase().includes(q) ? '' : 'none'; });
+});
+
+if (pItems.length > 0) selectPItem(0);
+</script>
+{% endblock %}

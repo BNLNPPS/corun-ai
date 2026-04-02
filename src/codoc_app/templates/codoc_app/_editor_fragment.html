@@ -1,0 +1,77 @@
+<div style="padding:0.75rem">
+    <h2 style="font-size:14px;margin-bottom:12px">
+        {% if prompt %}New Version of Prompt{% else %}New Prompt{% endif %}
+    </h2>
+
+    <form id="editor-form" onsubmit="return false;">
+        {% csrf_token %}
+        {% if prompt %}<input type="hidden" name="source_group_id" value="{{ prompt.group_id }}">{% endif %}
+
+        <label style="display:block;font-size:12px;color:var(--grey);margin-bottom:4px">Section</label>
+        <select name="section" style="width:100%;font-size:13px;padding:6px 10px;border:1px solid var(--border);border-radius:4px;background:var(--card-bg);color:var(--text);margin-bottom:12px">
+            {% for sec in sections %}
+            <option value="{{ sec.id }}" {% if prompt and prompt.section_id == sec.id %}selected{% endif %}>{{ sec.title|default:sec.name }}</option>
+            {% endfor %}
+        </select>
+
+        <label style="display:block;font-size:12px;color:var(--grey);margin-bottom:4px">Definition</label>
+        <select name="definition" style="width:100%;font-size:13px;padding:6px 10px;border:1px solid var(--border);border-radius:4px;background:var(--card-bg);color:var(--text);margin-bottom:12px">
+            {% for d in definitions %}
+            <option value="{{ d.id }}">{{ d.name }} ({{ d.data.model|default:"sonnet" }})</option>
+            {% endfor %}
+        </select>
+
+        <label style="display:block;font-size:12px;color:var(--grey);margin-bottom:4px">Prompt</label>
+        <textarea name="content" required placeholder="Describe what you want documented..."
+            style="width:100%;min-height:160px;font-family:inherit;font-size:14px;padding:10px;border:1px solid var(--border);border-radius:4px;background:var(--card-bg);color:var(--text);resize:vertical;line-height:1.5">{% if prompt %}{{ prompt.content }}{% endif %}</textarea>
+
+        <div style="display:flex;gap:8px;margin-top:12px">
+            <button type="button" class="btn" onclick="submitEditor('save')">Save</button>
+            <button type="button" class="btn" onclick="submitEditor('generate')">Generate</button>
+            <button type="button" class="btn" style="background:transparent;color:var(--grey);border:1px solid var(--border)" onclick="cancelEditor()">Cancel</button>
+        </div>
+    </form>
+</div>
+
+<script>
+function submitEditor(action) {
+    const form = document.getElementById('editor-form');
+    const formData = new FormData(form);
+    formData.set('action', action);
+
+    const buttons = form.querySelectorAll('button');
+    buttons.forEach(b => b.disabled = true);
+
+    fetch('{% url "codoc:save_prompt_api" %}', {
+        method: 'POST',
+        body: formData,
+        headers: {'X-Requested-With': 'XMLHttpRequest'},
+    }).then(r => r.json()).then(data => {
+        if (data.error) {
+            alert(data.error);
+            buttons.forEach(b => b.disabled = false);
+            return;
+        }
+        if (data.action === 'generate') {
+            // Redirect to queue to watch progress
+            window.location.href = '{% url "codoc:queue" %}';
+        } else {
+            // Refresh browse to show new prompt
+            window.location.reload();
+        }
+    }).catch(err => {
+        alert('Error: ' + err);
+        buttons.forEach(b => b.disabled = false);
+    });
+}
+
+function cancelEditor() {
+    // Reload first item or show placeholder
+    if (typeof selectItem === 'function' && currentIdx >= 0) {
+        selectItem(currentIdx);
+    } else {
+        document.getElementById('detail-body').innerHTML =
+            '<div style="padding:2rem;color:var(--grey)"><p>Select a prompt or page.</p></div>';
+    }
+}
+</script>

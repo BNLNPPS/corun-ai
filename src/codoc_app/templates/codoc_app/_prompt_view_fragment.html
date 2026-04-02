@@ -1,0 +1,39 @@
+<div style="padding:0.75rem">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="font-size:12px;color:var(--grey)">
+            {{ prompt.submitted_by.username }} · {{ prompt.section.title|default:prompt.section.name }}
+            · v{{ prompt.version }} · {{ prompt.modified_at|date:"M j H:i" }}
+        </div>
+        {% if user.is_authenticated %}
+        <div style="display:flex;gap:8px">
+            <button class="btn" onclick="loadPromptEditor('{{ prompt.group_id }}')">Edit</button>
+            {% if user == prompt.submitted_by %}
+            <button class="btn" style="background:#7f1d1d" onclick="deletePrompt('{{ prompt.group_id }}')">Delete</button>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="prompt-content">{{ prompt.content }}</div>
+
+    {% if versions|length > 1 %}
+    <h3 style="font-size:13px;margin-top:16px;margin-bottom:8px;color:var(--grey)">Version History</h3>
+    {% for v in versions %}
+    <div style="font-size:12px;color:var(--grey);margin-bottom:4px{% if v.is_current %};color:var(--text){% endif %}">
+        v{{ v.version }} · {{ v.created_at|date:"M j H:i" }}{% if v.is_current %} · current{% endif %}
+    </div>
+    {% endfor %}
+    {% endif %}
+</div>
+
+<script>
+function deletePrompt(gid) {
+    if (!confirm('Delete this prompt?')) return;
+    fetch('{% url "codoc:prompt_delete" "00000000-0000-0000-0000-000000000000" %}'.replace('00000000-0000-0000-0000-000000000000', gid), {
+        method: 'POST', headers: {'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value},
+    }).then(r => r.json()).then(data => {
+        if (data.ok) window.location.href = '{% url "codoc:prompts" %}';
+        else alert(data.error || 'Delete failed');
+    });
+}
+</script>

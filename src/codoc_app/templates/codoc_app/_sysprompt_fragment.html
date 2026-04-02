@@ -1,0 +1,40 @@
+<div style="padding:0.75rem">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <h2 style="font-size:16px;margin:0">{{ sp.name }}</h2>
+        {% if user.is_authenticated %}
+        <div style="display:flex;gap:8px">
+            <button class="btn" onclick="loadSpEditor('{{ sp.group_id }}')">Edit</button>
+            <button class="btn" style="background:#7f1d1d" onclick="deleteSp('{{ sp.group_id }}')">Delete</button>
+        </div>
+        {% endif %}
+    </div>
+
+    <div style="font-size:12px;color:var(--grey);margin-bottom:12px">
+        v{{ sp.version }} · {{ sp.modified_at|date:"M j H:i" }}
+        {% if sp.data.changed_by %} · {{ sp.data.changed_by }}{% endif %}
+        {% if sp.data.description %} · {{ sp.data.description }}{% endif %}
+    </div>
+
+    <div class="prompt-content">{{ sp.content }}</div>
+
+    {% if versions|length > 1 %}
+    <h3 style="font-size:13px;margin-top:16px;margin-bottom:8px;color:var(--grey)">Version History</h3>
+    {% for v in versions %}
+    <div style="font-size:12px;color:var(--grey);margin-bottom:4px{% if v.is_current %};color:var(--text){% endif %}">
+        v{{ v.version }} · {{ v.created_at|date:"M j H:i" }}{% if v.data.changed_by %} · {{ v.data.changed_by }}{% endif %}{% if v.is_current %} · current{% endif %}
+    </div>
+    {% endfor %}
+    {% endif %}
+</div>
+
+<script>
+function deleteSp(gid) {
+    if (!confirm('Delete this system prompt?')) return;
+    fetch('{% url "codoc:sysprompt_delete" "00000000-0000-0000-0000-000000000000" %}'.replace('00000000-0000-0000-0000-000000000000', gid), {
+        method: 'POST', headers: {'X-CSRFToken': getCSRF()},
+    }).then(r => r.json()).then(data => {
+        if (data.error) { alert(data.error); return; }
+        window.location.href = '{% url "codoc:sysprompts" %}';
+    });
+}
+</script>

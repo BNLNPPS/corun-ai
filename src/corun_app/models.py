@@ -67,12 +67,12 @@ class Page(models.Model):
     is_current = models.BooleanField(default=True)
 
     prompt = models.ForeignKey(
-        Prompt, on_delete=models.PROTECT, related_name='pages')     # specific prompt version
+        Prompt, on_delete=models.SET_NULL, null=True, blank=True, related_name='pages')
     section = models.ForeignKey(Section, on_delete=models.PROTECT, related_name='pages')
     content = models.TextField()                                    # generated content
     content_rendered = models.TextField(blank=True, default='')     # rendered output (cached)
-    status = models.CharField(max_length=50, default='draft')
-    # status values: draft, published, superseded, archived
+    status = models.CharField(max_length=50, default='published')
+    # status values: published, superseded, archived
     data = models.JSONField(default=dict, blank=True)
     # data keys: format, release_tag, generation_model, official, generation_time_s,
     #            job_id, sources
@@ -150,7 +150,7 @@ class JobDefinition(models.Model):
     modified_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ['name']
+        ordering = ['-modified_at']
 
     def __str__(self):
         return self.name
@@ -162,7 +162,7 @@ class Job(models.Model):
     definition = models.ForeignKey(
         JobDefinition, on_delete=models.PROTECT, related_name='jobs')
     prompt = models.ForeignKey(
-        Prompt, on_delete=models.PROTECT, null=True, blank=True, related_name='jobs')
+        Prompt, on_delete=models.SET_NULL, null=True, blank=True, related_name='jobs')
     status = models.CharField(max_length=50, default='queued')
     # status values: queued, running, completed, failed, cancelled
     data = models.JSONField(default=dict, blank=True)
@@ -219,3 +219,34 @@ class AppLog(models.Model):
 
     def __str__(self):
         return f"[{self.levelname}] {self.source}: {self.message[:80]}"
+
+
+# ── User Profile ─────────────────────────────────────────────────────────────
+
+
+class UserProfile(models.Model):
+    """User preferences. One per user."""
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='profile')
+    theme = models.CharField(max_length=10, default='dark')  # dark, light
+    data = models.JSONField(default=dict, blank=True)
+
+    def __str__(self):
+        return f"{self.user.username} profile"
+
+
+# ── Site Content ─────────────────────────────────────────────────────────────
+
+
+class SiteContent(models.Model):
+    """Editable site content blocks (about page, etc.)."""
+    slug = models.SlugField(unique=True)
+    title = models.CharField(max_length=200)
+    content = models.TextField()
+    content_rendered = models.TextField(blank=True, default='')
+    modified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+    modified_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.title

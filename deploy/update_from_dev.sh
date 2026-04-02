@@ -14,5 +14,8 @@ find "$TARGET_DIR" -path "$TARGET_DIR/.venv" -prune -o -type f -exec chmod o+r {
 
 "$VENV/bin/python" "$TARGET_DIR/src/manage.py" collectstatic --noinput
 
+# Touch WSGI script to trigger mod_wsgi daemon process reload
+touch "$TARGET_DIR/src/corun_project/wsgi_subpath.py"
+
 sudo systemctl reload apache2
 echo "Deployment complete. Apache reloaded."

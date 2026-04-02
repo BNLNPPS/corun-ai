@@ -1,0 +1,100 @@
+<div style="padding:0.75rem">
+    <h2 style="font-size:14px;margin-bottom:12px">{% if definition %}Edit Definition{% else %}New Definition{% endif %}</h2>
+
+    <form id="def-edit-form" onsubmit="return false;">
+        {% csrf_token %}
+
+        <label style="display:block;font-size:12px;color:var(--grey);margin-bottom:4px">Name</label>
+        <input type="text" name="name" required value="{{ definition.name|default:'' }}"
+            style="width:100%;font-size:13px;padding:6px 10px;border:1px solid var(--border);border-radius:4px;background:var(--card-bg);color:var(--text);margin-bottom:12px">
+
+        <label style="display:block;font-size:12px;color:var(--grey);margin-bottom:4px">Description</label>
+        <input type="text" name="description" value="{{ definition.description|default:'' }}"
+            style="width:100%;font-size:13px;padding:6px 10px;border:1px solid var(--border);border-radius:4px;background:var(--card-bg);color:var(--text);margin-bottom:12px">
+
+        <div style="display:flex;gap:12px;margin-bottom:12px">
+            <div style="flex:1">
+                <label style="display:block;font-size:12px;color:var(--grey);margin-bottom:4px">Model</label>
+                <select name="model" style="width:100%;font-size:13px;padding:6px 10px;border:1px solid var(--border);border-radius:4px;background:var(--card-bg);color:var(--text)">
+                    <option value="opus" {% if definition.data.model == 'opus' %}selected{% endif %}>Opus</option>
+                    <option value="sonnet" {% if not definition or definition.data.model == 'sonnet' %}selected{% endif %}>Sonnet</option>
+                    <option value="haiku" {% if definition.data.model == 'haiku' %}selected{% endif %}>Haiku</option>
+                </select>
+            </div>
+            <div style="flex:1">
+                <label style="display:block;font-size:12px;color:var(--grey);margin-bottom:4px">Effort</label>
+                <select name="effort" style="width:100%;font-size:13px;padding:6px 10px;border:1px solid var(--border);border-radius:4px;background:var(--card-bg);color:var(--text)">
+                    <option value="low" {% if definition.data.effort == 'low' %}selected{% endif %}>Low</option>
+                    <option value="medium" {% if definition.data.effort == 'medium' %}selected{% endif %}>Medium</option>
+                    <option value="high" {% if not definition or definition.data.effort == 'high' %}selected{% endif %}>High</option>
+                </select>
+            </div>
+            <div style="flex:1">
+                <label style="display:block;font-size:12px;color:var(--grey);margin-bottom:4px">Timeout (min)</label>
+                <input type="number" name="timeout_min" min="1" max="480" value="{% widthratio definition.data.timeout_s|default:1800 60 1 %}"
+                    style="width:100%;font-size:13px;padding:6px 10px;border:1px solid var(--border);border-radius:4px;background:var(--card-bg);color:var(--text)"
+                    id="timeout-min-input">
+            </div>
+        </div>
+
+        <label style="display:block;font-size:12px;color:var(--grey);margin-bottom:4px">MCP Tools</label>
+        <div style="margin-bottom:12px">
+            <label style="display:inline;font-size:13px;color:var(--text);margin-right:16px">
+                <input type="checkbox" name="mcp_tools" value="lxr" {% if not definition or 'lxr' in definition.data.mcp_tools %}checked{% endif %}> LXR
+            </label>
+            <label style="display:inline;font-size:13px;color:var(--text);margin-right:16px">
+                <input type="checkbox" name="mcp_tools" value="github" {% if not definition or 'github' in definition.data.mcp_tools %}checked{% endif %}> GitHub
+            </label>
+        </div>
+
+        <label style="display:block;font-size:12px;color:var(--grey);margin-bottom:4px">System Prompt</label>
+        <select name="system_prompt_group_id"
+            style="width:100%;font-size:13px;padding:6px 10px;border:1px solid var(--border);border-radius:4px;background:var(--card-bg);color:var(--text);margin-bottom:12px">
+            {% for sp in sysprompts %}
+            <option value="{{ sp.group_id }}" {% if definition and definition.data.system_prompt_group_id == sp.group_id|stringformat:'s' %}selected{% endif %}>{{ sp.name }} v{{ sp.version }}</option>
+            {% endfor %}
+        </select>
+
+        <div style="display:flex;gap:8px;align-items:center">
+            <button type="button" class="btn" onclick="saveDef('{{ definition.id|default:'' }}')">Save</button>
+            <button type="button" class="btn" style="background:transparent;color:var(--grey);border:1px solid var(--border)" onclick="window.location.reload()">Cancel</button>
+            {% if definition %}<button type="button" class="btn" style="background:#7f1d1d;margin-left:auto" onclick="deleteDef('{{ definition.id }}')">Delete</button>{% endif %}
+        </div>
+    </form>
+</div>
+
+<script>
+function deleteDef(defId) {
+    if (!confirm('Delete this definition?')) return;
+    fetch('{% url "codoc:definition_delete" "00000000-0000-0000-0000-000000000000" %}'.replace('00000000-0000-0000-0000-000000000000', defId), {
+        method: 'POST',
+        headers: {'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value},
+    }).then(r => r.json()).then(data => {
+        if (data.error) { alert(data.error); return; }
+        window.location.href = '{% url "codoc:definitions" %}';
+    }).catch(err => alert('Delete failed: ' + err));
+}
+
+function saveDef(defId) {
+    const form = document.getElementById('def-edit-form');
+    const formData = new FormData(form);
+    const url = defId
+        ? '{% url "codoc:definition_edit" "00000000-0000-0000-0000-000000000000" %}'.replace('00000000-0000-0000-0000-000000000000', defId)
+        : '{% url "codoc:definition_new" %}';
+
+    fetch(url, { method: 'POST', body: formData })
+        .then(r => {
+            if (!r.ok) { throw new Error('HTTP ' + r.status); }
+            return r.json();
+        })
+        .then(data => {
+            if (data.error) { alert(data.error); return; }
+            // Reload and select the saved definition
+            const savedId = data.id;
+            const params = new URLSearchParams(window.location.search);
+            params.set('select', savedId);
+            window.location.search = params.toString();
+        })
+        .catch(err => alert('Save failed: ' + err));
+}
+</script>

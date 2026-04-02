@@ -1,0 +1,40 @@
+<div style="padding:0.75rem">
+    <h2 style="font-size:14px;margin-bottom:12px">{% if prompt %}Edit Prompt{% else %}New Prompt{% endif %}</h2>
+
+    <form id="prompt-edit-form" onsubmit="return false;">
+        {% csrf_token %}
+        {% if prompt %}<input type="hidden" name="source_group_id" value="{{ prompt.group_id }}">{% endif %}
+
+        <label style="display:block;font-size:12px;color:var(--grey);margin-bottom:4px">Section</label>
+        <select name="section" style="width:100%;font-size:13px;padding:6px 10px;border:1px solid var(--border);border-radius:4px;background:var(--card-bg);color:var(--text);margin-bottom:12px">
+            {% for sec in sections %}
+            <option value="{{ sec.id }}" {% if prompt and prompt.section_id == sec.id %}selected{% endif %}>{{ sec.title|default:sec.name }}</option>
+            {% endfor %}
+        </select>
+
+        <label style="display:block;font-size:12px;color:var(--grey);margin-bottom:4px">Prompt</label>
+        <textarea name="content" required placeholder="Describe what you want documented..."
+            style="width:100%;min-height:200px;font-family:inherit;font-size:14px;padding:10px;border:1px solid var(--border);border-radius:4px;background:var(--card-bg);color:var(--text);resize:vertical;line-height:1.5;margin-bottom:12px">{% if prompt %}{{ prompt.content }}{% endif %}</textarea>
+
+        <div style="display:flex;gap:8px">
+            <button type="button" class="btn" onclick="savePrompt()">Save</button>
+            <button type="button" class="btn" style="background:transparent;color:var(--grey);border:1px solid var(--border)" onclick="window.location.reload()">Cancel</button>
+        </div>
+    </form>
+</div>
+
+<script>
+function savePrompt() {
+    const form = document.getElementById('prompt-edit-form');
+    const formData = new FormData(form);
+    formData.set('action', 'save');
+
+    fetch('{% url "codoc:save_prompt_api" %}', {
+        method: 'POST', body: formData,
+        headers: {'X-Requested-With': 'XMLHttpRequest'},
+    }).then(r => r.json()).then(data => {
+        if (data.error) { alert(data.error); return; }
+        window.location.href = '{% url "codoc:prompts" %}';
+    }).catch(err => alert('Save failed: ' + err));
+}
+</script>

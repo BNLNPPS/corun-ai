@@ -1,0 +1,36 @@
+{% extends "codoc_app/base.html" %}
+
+{% block title %}{{ section.title|default:section.name }} — ePIC Code Documentation{% endblock %}
+
+{% block nav %}
+<nav><a href="{% url 'codoc:home' %}">Home</a></nav>
+{% endblock %}
+
+{% block body %}
+<h1>{{ section.title|default:section.name }}</h1>
+{% if section.description %}<p class="subtitle">{{ section.description }}</p>{% endif %}
+
+<h2>Published Pages</h2>
+{% if pages %}
+    {% for page in pages %}
+    <div class="card">
+        <h3><a href="{% url 'codoc:page' page.group_id %}">{{ page.prompt.content|truncatewords:20 }}</a></h3>
+        <p>{{ page.created_at|date:"M j H:i" }}</p>
+    </div>
+    {% endfor %}
+{% else %}
+    <p class="empty">No published pages yet.</p>
+{% endif %}
+
+<h2>Prompts</h2>
+{% if prompts %}
+    {% for prompt in prompts %}
+    <div class="card">
+        <h3><a href="{% url 'codoc:prompt' prompt.group_id %}">{{ prompt.content|truncatewords:20 }}</a></h3>
+        <p>{{ prompt.status }} — {{ prompt.created_at|date:"M j H:i" }}</p>
+    </div>
+    {% endfor %}
+{% else %}
+    <p class="empty">No prompts submitted yet.</p>
+{% endif %}
+{% endblock %}

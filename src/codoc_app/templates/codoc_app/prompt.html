@@ -1,0 +1,28 @@
+{% extends "codoc_app/base.html" %}
+
+{% block title %}Prompt — ePIC Code Documentation{% endblock %}
+
+{% block nav %}
+<nav>
+    <a href="{% url 'codoc:home' %}">Home</a>
+    <a href="{% url 'codoc:section' prompt.section.name %}">{{ prompt.section.title|default:prompt.section.name }}</a>
+</nav>
+{% endblock %}
+
+{% block body %}
+<h1>Prompt</h1>
+<div class="meta">{{ prompt.status }} · version {{ prompt.version }} · {{ prompt.created_at|date:"M j H:i" }}</div>
+<div class="prompt-content">{{ prompt.content }}</div>
+
+<h2>Generated Pages</h2>
+{% if pages %}
+    {% for page in pages %}
+    <div class="card">
+        <h3><a href="{% url 'codoc:page' page.group_id %}">Version {{ page.version }}</a></h3>
+        <p>{{ page.status }} — {{ page.created_at|date:"M j H:i" }}</p>
+    </div>
+    {% endfor %}
+{% else %}
+    <p class="empty">No pages generated yet.</p>
+{% endif %}
+{% endblock %}

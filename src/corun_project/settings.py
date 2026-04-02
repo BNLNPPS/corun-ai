@@ -21,6 +21,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'corun_app',
+    'codoc_app',
 ]
 
 MIDDLEWARE = [
@@ -48,6 +49,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'codoc_app.context_processors.user_theme',
             ],
         },
     },
@@ -79,10 +81,12 @@ STATIC_ROOT = BASE_DIR.parent / 'staticfiles'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Cookie path scoping — prevent conflicts with other apps on same domain
+# Cookie scoping — unique names prevent conflicts with other apps on same domain
 _subpath = FORCE_SCRIPT_NAME or ""
 CSRF_COOKIE_PATH = _subpath or "/"
 SESSION_COOKIE_PATH = _subpath or "/"
+CSRF_COOKIE_NAME = 'csrftoken_doc'
+SESSION_COOKIE_NAME = 'sessionid_doc'
 
 # Behind Apache reverse proxy
 USE_X_FORWARDED_HOST = True
@@ -90,5 +94,30 @@ SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 # Authentication
 LOGIN_URL = 'login'
-LOGIN_REDIRECT_URL = '/'
-LOGOUT_REDIRECT_URL = '/'
+LOGIN_REDIRECT_URL = 'codoc:home'
+LOGOUT_REDIRECT_URL = 'codoc:home'
+
+# Logging
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'worker': {
+            'format': '%(asctime)s [%(levelname)s] %(message)s',
+            'datefmt': '%Y-%m-%d %H:%M:%S',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'worker',
+        },
+    },
+    'loggers': {
+        'corun.worker': {
+            'handlers': ['console'],
+            'level': 'INFO',
+        },
+    },
+}
+

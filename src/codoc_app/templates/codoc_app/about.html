@@ -1,0 +1,21 @@
+{% extends "codoc_app/base.html" %}
+
+{% block title %}About — ePIC Code Documentation{% endblock %}
+
+{% block nav %}
+<nav><a href="{% url 'codoc:home' %}">Browse</a></nav>
+{% endblock %}
+
+{% block body %}
+{% if content and content.content_rendered %}
+    <div class="content">{{ content.content_rendered|safe }}</div>
+    {% if user.is_staff %}<p style="margin-top:1.5em"><a href="{% url 'codoc:about_edit' %}">Edit</a></p>{% endif %}
+{% elif content and content.content %}
+    <div class="content"><pre>{{ content.content }}</pre></div>
+    {% if user.is_staff %}<p style="margin-top:1.5em"><a href="{% url 'codoc:about_edit' %}">Edit</a></p>{% endif %}
+{% else %}
+    <h1>About</h1>
+    <p class="empty">No about page content yet.</p>
+    {% if user.is_staff %}<p style="margin-top:1em"><a href="{% url 'codoc:about_edit' %}">Create about page</a></p>{% endif %}
+{% endif %}
+{% endblock %}

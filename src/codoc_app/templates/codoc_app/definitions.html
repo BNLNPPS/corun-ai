@@ -1,0 +1,114 @@
+{% extends "codoc_app/base.html" %}
+
+{% block title %}Definitions — ePIC Code Documentation{% endblock %}
+
+{% block page %}
+<div class="compose-wrap">
+    <!-- Left: Definitions list -->
+    <div class="browse-panel">
+        <div class="browse-header">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                <span style="font-weight:600;font-size:13px">Job Definitions</span>
+                {% if user.is_authenticated %}<button class="btn" onclick="loadDefEditor()">New</button>{% endif %}
+            </div>
+        </div>
+        <div class="browse-list" id="def-list" tabindex="0">
+            {% for d in definitions %}
+            <div class="browse-item" data-id="{{ d.id }}" tabindex="-1" onclick="loadDefDetail('{{ d.id }}')">
+                <div class="browse-item-title">{{ d.name }}</div>
+                <div class="browse-item-meta">{{ d.data.model|default:"sonnet" }} · {{ d.data.effort|default:"high" }} · {{ d.modified_at|date:"M j H:i" }}{% if d.data.mcp_tools %} · {{ d.data.mcp_tools|join:", " }}{% endif %}</div>
+            </div>
+            {% empty %}
+            <div style="padding:12px;color:var(--grey);font-size:13px">No definitions yet.</div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Right: Detail panel -->
+    <div class="detail-panel" id="detail-panel">
+        <div class="panel-body" id="def-detail-body">
+            <div style="padding:2rem;color:var(--grey)">
+                <p>Select a definition or create a new one.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<form id="csrf-form" style="display:none">{% csrf_token %}</form>
+<script>
+function getCSRF() { return document.querySelector('[name=csrfmiddlewaretoken]').value; }
+
+function setHTML(container, html) {
+    container.innerHTML = html;
+    container.querySelectorAll('script').forEach(old => {
+        const s = document.createElement('script');
+        s.textContent = old.textContent;
+        old.replaceWith(s);
+    });
+}
+
+function loadDefDetail(defId) {
+    document.querySelectorAll('.browse-item').forEach(i => i.classList.remove('selected'));
+    event.currentTarget.classList.add('selected');
+    fetch('{% url "codoc:definition_fragment" "00000000-0000-0000-0000-000000000000" %}'.replace('00000000-0000-0000-0000-000000000000', defId))
+        .then(r => r.text()).then(html => { setHTML(document.getElementById('def-detail-body'), html); });
+}
+
+function loadDefEditor(defId) {
+    const url = defId
+        ? '{% url "codoc:definition_edit" "00000000-0000-0000-0000-000000000000" %}'.replace('00000000-0000-0000-0000-000000000000', defId)
+        : '{% url "codoc:definition_new" %}';
+    fetch(url).then(r => r.text()).then(html => { setHTML(document.getElementById('def-detail-body'), html); });
+}
+
+// Keyboard navigation
+const defItems = document.querySelectorAll('.browse-item');
+let defIdx = -1;
+
+function selectDefItem(idx) {
+    defItems.forEach(i => i.classList.remove('selected'));
+    if (idx >= 0 && idx < defItems.length) {
+        defIdx = idx;
+        defItems[idx].classList.add('selected');
+        defItems[idx].scrollIntoView({ block: 'nearest' });
+        defItems[idx].click();
+    }
+}
+
+document.getElementById('def-list').addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); selectDefItem(Math.min(defIdx + 1, defItems.length - 1)); }
+    if (e.key === 'ArrowUp') { e.preventDefault(); selectDefItem(Math.max(defIdx - 1, 0)); }
+});
+
+defItems.forEach((item, idx) => {
+    item.addEventListener('click', () => { defIdx = idx; });
+});
+
+function copyCurrentDef() {
+    if (defIdx < 0 || !defItems[defIdx]) { alert('Select a definition first'); return; }
+    const defId = defItems[defIdx].dataset.id;
+    copyDef(defId);
+}
+
+function copyDef(defId) {
+    fetch('{% url "codoc:definition_copy" "00000000-0000-0000-0000-000000000000" %}'.replace('00000000-0000-0000-0000-000000000000', defId), {
+        method: 'POST',
+        headers: {'X-CSRFToken': getCSRF(), 'X-Requested-With': 'XMLHttpRequest'},
+    }).then(r => r.json()).then(data => {
+        if (data.ok) {
+            const params = new URLSearchParams(window.location.search);
+            params.set('select', data.id);
+            window.location.search = params.toString();
+        }
+    }).catch(err => alert('Copy failed: ' + err));
+}
+
+// Auto-select: from URL param or first
+const selectParam = new URLSearchParams(window.location.search).get('select');
+let startIdx = 0;
+if (selectParam) {
+    defItems.forEach((item, idx) => { if (item.dataset.id === selectParam) startIdx = idx; });
+}
+if (defItems.length > 0) selectDefItem(startIdx);
+</script>
+{% endblock %}

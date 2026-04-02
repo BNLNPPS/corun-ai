@@ -1,0 +1,47 @@
+{% extends "codoc_app/base.html" %}
+
+{% block title %}Edit {{ sp.name }} — System Prompt{% endblock %}
+
+{% block nav %}
+<nav><a href="{% url 'codoc:home' %}">Home</a> <a href="{% url 'codoc:sysprompt' sp.group_id %}">{{ sp.name }}</a></nav>
+{% endblock %}
+
+{% block extra_css %}
+input[type=text] { width: 100%; padding: 10px 12px; font-size: 1em; font-family: inherit;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--card-bg); color: var(--text); }
+textarea { width: 100%; min-height: 400px; font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+    font-size: 0.9em; padding: 12px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--card-bg); color: var(--text); resize: vertical; line-height: 1.5; }
+button[type=submit] { font-family: sans-serif; font-size: 0.95em; padding: 10px 24px;
+    background: var(--link); color: #fff; border: none; border-radius: 6px;
+    cursor: pointer; margin-top: 8px; }
+button[type=submit]:hover { opacity: 0.9; }
+label { display: block; font-family: sans-serif; font-size: 0.85em;
+    color: var(--muted); margin-bottom: 6px; margin-top: 1.2em; }
+.messages { margin-bottom: 1em; }
+.messages .error { color: #991b1b; background: #fee2e2; padding: 8px 14px; border-radius: 6px; font-family: sans-serif; font-size: 0.9em; }
+.dark .messages .error { color: #fecaca; background: #7f1d1d; }
+{% endblock %}
+
+{% block body %}
+<h1>Edit System Prompt</h1>
+<div class="meta">Editing v{{ sp.version }} — saving creates v{{ sp.version|add:1 }}</div>
+
+{% if messages %}
+<div class="messages">
+    {% for msg in messages %}<div class="{{ msg.tags }}">{{ msg }}</div>{% endfor %}
+</div>
+{% endif %}
+
+<form method="post">
+    {% csrf_token %}
+    <label for="name">Name</label>
+    <input type="text" name="name" id="name" value="{{ sp.name }}">
+
+    <label for="content">Content</label>
+    <textarea name="content" id="content">{{ sp.content }}</textarea>
+
+    <button type="submit">Save New Version</button>
+</form>
+{% endblock %}

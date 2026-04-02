@@ -1,0 +1,43 @@
+{% load codoc_filters %}
+<div style="padding:0.75rem">
+    <!-- Owner + definition info -->
+    <div style="font-size:12px;color:var(--grey);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
+        <div>
+            {{ page.data.submitted_by }}
+            · {{ page.section.title|default:page.section.name }}
+            · Page v{{ page.version }} · {{ page.created_at|date:"M j H:i" }}
+            {% if page.data.generation_model %} · {{ page.data.generation_model }}{% endif %}
+            {% if page.data.generation_time_s %} · {{ page.data.generation_time_s|duration }}{% endif %}
+            {% if page.data.definition_name %} · {{ page.data.definition_name }}{% endif %}
+            · <a href="{% url 'codoc:page' page.group_id %}">permalink</a>
+        </div>
+        {% if user.is_authenticated %}
+        <button class="btn" style="background:#7f1d1d;font-size:11px;padding:2px 8px;margin-left:12px" onclick="deletePage('{{ page.group_id }}')">Delete</button>
+        {% endif %}
+    </div>
+
+    <!-- User prompt — from page data -->
+    <div class="prompt-content">{{ page.data.prompt_content }}</div>
+
+    <!-- Rendered content -->
+    <div class="content">
+        {% if page.content_rendered %}
+            {{ page.content_rendered|safe }}
+        {% else %}
+            <pre>{{ page.content }}</pre>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+function deletePage(groupId) {
+    if (!confirm('Delete this page?')) return;
+    fetch('{% url "codoc:page_delete" "00000000-0000-0000-0000-000000000000" %}'.replace('00000000-0000-0000-0000-000000000000', groupId), {
+        method: 'POST',
+        headers: {'X-CSRFToken': '{{ csrf_token }}'},
+    }).then(r => r.json()).then(data => {
+        if (data.ok) { window.location.reload(); }
+        else { alert(data.error || 'Delete failed'); }
+    }).catch(err => alert('Delete failed: ' + err));
+}
+</script>

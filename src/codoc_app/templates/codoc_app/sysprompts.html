@@ -1,0 +1,63 @@
+{% extends "codoc_app/base.html" %}
+
+{% block title %}System Prompts — ePIC Code Documentation{% endblock %}
+
+{% block page %}
+<div class="compose-wrap">
+    <div class="browse-panel">
+        <div class="browse-header">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                <span style="font-weight:600;font-size:13px">System Prompts</span>
+                {% if user.is_authenticated %}<button class="btn" onclick="loadSpEditor()">New</button>{% endif %}
+            </div>
+        </div>
+        <div class="browse-list" id="sp-list" tabindex="0">
+            {% for sp in sysprompts %}
+            <div class="browse-item" data-id="{{ sp.group_id }}" tabindex="-1">
+                <div class="browse-item-title">{{ sp.name }}</div>
+                <div class="browse-item-meta">v{{ sp.version }} · {{ sp.modified_at|date:"M j H:i" }}</div>
+            </div>
+            {% empty %}
+            <div style="padding:12px;color:var(--grey);font-size:13px">No system prompts yet.</div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="detail-panel">
+        <div class="panel-body" id="sp-detail-body">
+            <div style="padding:2rem;color:var(--grey)"><p>Select a system prompt or create a new one.</p></div>
+        </div>
+    </div>
+</div>
+
+<form id="csrf-form" style="display:none">{% csrf_token %}</form>
+<script>
+function getCSRF() { return document.querySelector('[name=csrfmiddlewaretoken]').value; }
+function setHTML(c, h) { c.innerHTML = h; c.querySelectorAll('script').forEach(old => { const s = document.createElement('script'); s.textContent = old.textContent; old.replaceWith(s); }); }
+
+function loadSpDetail(gid) {
+    fetch('{% url "codoc:sysprompt_frag" "00000000-0000-0000-0000-000000000000" %}'.replace('00000000-0000-0000-0000-000000000000', gid))
+        .then(r => r.text()).then(h => setHTML(document.getElementById('sp-detail-body'), h));
+}
+
+function loadSpEditor(gid) {
+    const url = gid
+        ? '{% url "codoc:sysprompt_edit_frag" "00000000-0000-0000-0000-000000000000" %}'.replace('00000000-0000-0000-0000-000000000000', gid)
+        : '{% url "codoc:sysprompt_new_frag" %}';
+    fetch(url).then(r => r.text()).then(h => setHTML(document.getElementById('sp-detail-body'), h));
+}
+
+const spItems = document.querySelectorAll('.browse-item');
+let spIdx = -1;
+function selectSpItem(idx) {
+    spItems.forEach(i => i.classList.remove('selected'));
+    if (idx >= 0 && idx < spItems.length) { spIdx = idx; spItems[idx].classList.add('selected'); spItems[idx].scrollIntoView({block:'nearest'}); loadSpDetail(spItems[idx].dataset.id); }
+}
+document.getElementById('sp-list').addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); selectSpItem(Math.min(spIdx+1, spItems.length-1)); }
+    if (e.key === 'ArrowUp') { e.preventDefault(); selectSpItem(Math.max(spIdx-1, 0)); }
+});
+spItems.forEach((item, idx) => item.addEventListener('click', () => selectSpItem(idx)));
+if (spItems.length > 0) selectSpItem(0);
+</script>
+{% endblock %}

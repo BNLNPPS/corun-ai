@@ -1,0 +1,151 @@
+{% extends "codoc_app/base.html" %}
+
+{% block title %}Job Queue — ePIC Code Documentation{% endblock %}
+
+{% block nav %}
+<nav><a href="{% url 'codoc:home' %}">Browse</a></nav>
+{% endblock %}
+
+{% block body %}
+<h1>Job Queue</h1>
+
+<div id="process-monitor" style="display:none;margin-bottom:16px">
+    <div id="process-details" style="font-size:12px;color:var(--grey)"></div>
+</div>
+
+<div id="active-section"></div>
+<div id="completed-section"></div>
+
+<script>
+const PAGE_URL = '{% url "codoc:page" "00000000-0000-0000-0000-000000000000" %}';
+const ABORT_URL = '{% url "codoc:job_abort" "00000000-0000-0000-0000-000000000000" %}';
+const RERUN_URL = '{% url "codoc:job_rerun" "00000000-0000-0000-0000-000000000000" %}';
+const DELETE_URL = '{% url "codoc:job_delete" "00000000-0000-0000-0000-000000000000" %}';
+const CSRF = '{{ csrf_token }}';
+
+function formatBytes(b) {
+    if (b < 1024) return b + ' B';
+    if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+    return (b/1048576).toFixed(1) + ' MB';
+}
+
+function truncate(s, n) { return s.length > n ? s.slice(0, n) + '…' : s; }
+
+let prevRead = null, prevWrite = null;
+
+function renderQueue(data) {
+    const active = data.jobs.filter(j => j.status === 'queued' || j.status === 'running');
+    const completed = data.jobs.filter(j => j.status !== 'queued' && j.status !== 'running');
+
+    // Active section
+    let ahtml = '';
+    if (active.length > 0) {
+        ahtml = '<h2>Active <span style="font-size:12px;color:var(--grey)">(live)</span></h2>';
+        ahtml += '<table class="queue"><thead><tr><th>Prompt</th><th>Definition</th><th>Status</th><th>Started</th><th>Elapsed</th><th></th></tr></thead><tbody>';
+        active.forEach(j => {
+            const started = new Date(j.created_iso);
+            const secs = Math.floor((Date.now() - started) / 1000);
+            const m = Math.floor(Math.max(0, secs) / 60);
+            const s = Math.max(0, secs) % 60;
+            const elapsed = m + ':' + String(s).padStart(2, '0');
+            const abortUrl = ABORT_URL.replace('00000000-0000-0000-0000-000000000000', j.id);
+            ahtml += '<tr><td>' + truncate(j.prompt || '—', 60) + '</td><td>' + j.definition +
+                '</td><td><span class="status status-' + j.status + '">' + j.status +
+                '</span></td><td>' + j.created + '</td><td>' + elapsed +
+                '</td><td><button class="btn" style="background:#7f1d1d;font-size:11px;padding:2px 8px" onclick="abortJob(\'' + j.id + '\')">Abort</button></td></tr>';
+        });
+        ahtml += '</tbody></table>';
+    } else {
+        ahtml = '<p class="empty">No active jobs.</p>';
+    }
+    document.getElementById('active-section').innerHTML = ahtml;
+
+    // Completed section
+    let chtml = '<h2>Completed</h2>';
+    if (completed.length > 0) {
+        chtml += '<table class="queue"><thead><tr><th>Prompt</th><th>Definition</th><th>Status</th><th>Time</th><th>Result</th><th></th></tr></thead><tbody>';
+        completed.forEach(j => {
+            let result = '';
+            if (j.page_group_id) {
+                const url = PAGE_URL.replace('00000000-0000-0000-0000-000000000000', j.page_group_id);
+                result = '<a href="' + url + '">View page</a>';
+            }
+            if (j.error) {
+                result += '<span style="color:#fecaca;font-size:12px">' + truncate(j.error, 80) + '</span>';
+            }
+            let timing = '';
+            if (j.timing) {
+                const ts = Math.round(j.timing);
+                timing = ts < 60 ? ' · ' + ts + 's' : ' · ' + Math.floor(ts/60) + 'm ' + (ts%60) + 's';
+            }
+            chtml += '<tr><td>' + truncate(j.prompt || '—', 60) + '</td><td>' + j.definition +
+                '</td><td><span class="status status-' + j.status + '">' + j.status +
+                '</span></td><td>' + j.created + timing + '</td><td>' + result +
+                '</td><td>' +
+                '<button class="btn" style="background:#14532d;font-size:11px;padding:2px 8px;margin-right:16px" onclick="rerunJob(\'' + j.id + '\')">Rerun</button>' +
+                '<span style="color:#fecaca;cursor:pointer;font-size:16px" onclick="deleteJob(\'' + j.id + '\')" title="Delete">✕</span></td></tr>';
+        });
+        chtml += '</tbody></table>';
+    } else {
+        chtml += '<p class="empty">No completed jobs.</p>';
+    }
+    document.getElementById('completed-section').innerHTML = chtml;
+
+    // Process monitor
+    const mon = document.getElementById('process-monitor');
+    const det = document.getElementById('process-details');
+    if (data.claude_processes && data.claude_processes.length > 0) {
+        mon.style.display = '';
+        let lines = [];
+        data.claude_processes.forEach(p => {
+            let rate = '';
+            if (p.write_bytes !== undefined) {
+                if (prevWrite !== null) {
+                    const dw = p.write_bytes - prevWrite;
+                    rate = dw > 0 ? ' · ' + formatBytes(dw) + '/s out' : ' · idle';
+                }
+                prevRead = p.read_bytes;
+                prevWrite = p.write_bytes;
+            }
+            lines.push('<span style="color:var(--text)">claude</span> pid ' + p.pid +
+                ' · cpu ' + p.cpu + '% · mem ' + p.mem + '% · ' + p.time + rate);
+        });
+        det.innerHTML = lines.join('<br>');
+    } else {
+        mon.style.display = 'none';
+        prevRead = null;
+        prevWrite = null;
+    }
+}
+
+function abortJob(id) {
+    if (!confirm('Abort this job?')) return;
+    fetch(ABORT_URL.replace('00000000-0000-0000-0000-000000000000', id), {
+        method: 'POST', headers: {'X-CSRFToken': CSRF},
+    }).then(r => r.json()).then(() => pollQueue());
+}
+
+function rerunJob(id) {
+    fetch(RERUN_URL.replace('00000000-0000-0000-0000-000000000000', id), {
+        method: 'POST', headers: {'X-CSRFToken': CSRF},
+    }).then(r => r.json()).then(() => pollQueue());
+}
+
+function deleteJob(id) {
+    fetch(DELETE_URL.replace('00000000-0000-0000-0000-000000000000', id), {
+        method: 'POST', headers: {'X-CSRFToken': CSRF},
+    }).then(r => r.json()).then(() => pollQueue());
+}
+
+function pollQueue() {
+    fetch('{% url "codoc:queue_status" %}')
+        .then(r => r.json())
+        .then(renderQueue)
+        .catch(() => {});
+}
+
+// Full rebuild every 5 seconds
+setInterval(pollQueue, 5000);
+pollQueue();
+</script>
+{% endblock %}

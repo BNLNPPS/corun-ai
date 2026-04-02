@@ -1,0 +1,28 @@
+{% extends "codoc_app/base.html" %}
+
+{% block title %}{{ sp.name }} — System Prompt{% endblock %}
+
+{% block nav %}
+<nav><a href="{% url 'codoc:home' %}">Home</a> <a href="{% url 'codoc:config' %}">Config</a></nav>
+{% endblock %}
+
+{% block body %}
+<h1>{{ sp.name }}</h1>
+<div class="meta">version {{ sp.version }} · {{ sp.modified_at|date:"M j H:i" }}{% if sp.data.changed_by %} · {{ sp.data.changed_by }}{% endif %}</div>
+
+{% if user.is_authenticated %}
+<p style="margin: 1em 0;"><a href="{% url 'codoc:sysprompt_edit' sp.group_id %}">Edit</a></p>
+{% endif %}
+
+<div class="prompt-content">{{ sp.content }}</div>
+
+{% if versions|length > 1 %}
+<h2>Version History</h2>
+{% for v in versions %}
+<div class="card">
+    <h3>v{{ v.version }}{% if v.is_current %} (current){% endif %}</h3>
+    <p>{{ v.created_at|date:"M j H:i" }}{% if v.data.changed_by %} · {{ v.data.changed_by }}{% endif %}</p>
+</div>
+{% endfor %}
+{% endif %}
+{% endblock %}

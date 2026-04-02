@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}ePIC Code Documentation{% endblock %}</title>
+    <style>
+        :root {
+            --bg: #141414;
+            --text: #e0e0e0;
+            --grey: #999;
+            --accent: #d8a070;
+            --link: #d8a070;
+            --blue: #5b9bd5;
+            --border: #2a2a2a;
+            --code-bg: #1e1e1e;
+            --card-bg: #1a1a1a;
+            --topbar-bg: #1c1c1c;
+            --topbar-border: #2e2e2e;
+            --selected: #1e2a3a;
+            --selected-border: #5b9bd5;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { height: 100%; }
+        body {
+            background: var(--bg); color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            font-size: 14px; line-height: 1.5;
+            display: flex; flex-direction: column;
+        }
+        a { color: var(--link); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        /* Top bar */
+        .topbar {
+            background: var(--topbar-bg);
+            border-bottom: 1px solid var(--topbar-border);
+            padding: 7px 20px;
+            display: flex; justify-content: space-between; align-items: center;
+            font-size: 13px; flex-shrink: 0;
+        }
+        .topbar-brand { color: var(--accent); font-weight: 600; font-size: 14px; }
+        .topbar-brand a { color: var(--accent); }
+        .topbar-nav a { color: var(--text); margin-left: 16px; }
+        .topbar-nav a:hover { color: var(--accent); text-decoration: none; }
+        .topbar-sep { color: var(--border); margin-left: 16px; }
+        .topbar-right { display: flex; align-items: center; gap: 16px; }
+        .topbar-right a { color: var(--text); }
+        .topbar-right a:hover { color: var(--accent); text-decoration: none; }
+        .topbar-right .username { color: var(--grey); }
+
+        /* Page content */
+        .page { flex: 1; overflow: hidden; }
+        .main { max-width: 1230px; margin: 0 auto; padding: 24px 24px 80px; overflow-y: auto; height: 100%; }
+
+        /* Headings */
+        h1 { font-size: 1.4em; font-weight: 600; margin-bottom: 0.3em; }
+        h2 { font-size: 1.15em; margin-top: 1.2em; margin-bottom: 0.4em; }
+        .subtitle { color: var(--grey); font-size: 13px; margin-bottom: 1.5em; }
+        .meta { color: var(--grey); font-size: 13px; margin-bottom: 1em; }
+        .empty { color: var(--grey); font-style: italic; }
+
+        /* Nav */
+        nav { font-size: 13px; margin-bottom: 1.2em; }
+        nav a { margin-right: 14px; }
+
+        /* Cards */
+        .card {
+            background: var(--card-bg); border: 1px solid var(--border);
+            border-radius: 6px; padding: 10px 14px; margin-bottom: 6px;
+        }
+        .card h3 { font-size: 14px; margin: 0 0 3px 0; font-weight: 500; }
+        .card p { margin: 0; color: var(--grey); font-size: 13px; }
+
+        /* Two-panel compose layout */
+        .compose-wrap {
+            display: flex; gap: 1rem; padding: 0.75rem 1rem; height: calc(100vh - 42px);
+        }
+        .browse-panel { flex: 0 0 28%; display: flex; flex-direction: column; min-width: 0; }
+        .browse-header { margin-bottom: 0.5rem; }
+        .browse-search {
+            width: 100%; padding: 6px 10px; border: 1px solid var(--border);
+            border-radius: 4px; font-size: 13px; background: var(--card-bg); color: var(--text);
+            margin-bottom: 0.5rem;
+        }
+        .browse-list {
+            flex: 1; overflow-y: auto; border: 1px solid var(--border);
+            border-radius: 4px; background: var(--card-bg);
+        }
+        .browse-item {
+            padding: 8px 12px; border-bottom: 1px solid var(--border);
+            cursor: pointer; outline: none;
+        }
+        .browse-item:last-child { border-bottom: none; }
+        .browse-item:hover { background: #1e1e1e; }
+        .browse-item.selected { background: var(--selected); border-left: 3px solid var(--selected-border); }
+        .browse-item-title { font-weight: 500; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .browse-item-meta { font-size: 12px; color: var(--grey); margin-top: 2px; }
+        .browse-section { padding: 6px 12px; font-weight: 600; color: var(--accent); font-size: 12px; text-transform: uppercase; background: var(--bg); }
+
+        .detail-panel { flex: 1; display: flex; flex-direction: column; min-width: 0; overflow-y: auto; }
+        .detail-panel .panel-body { flex: 1; overflow-y: auto; padding: 0 0.5rem; }
+
+        /* Rendered content */
+        .content p { margin-bottom: 1em; }
+        .content a { color: var(--link); }
+        .content h1, .content h2, .content h3, .content h4 { margin-top: 1.2em; margin-bottom: 0.4em; }
+        .content h2 { font-size: 1.15em; }
+        .content h3 { font-size: 1.05em; }
+        .content ul, .content ol { margin-left: 1.5em; margin-bottom: 1em; }
+        .content li { margin-bottom: 0.3em; }
+        .content pre {
+            background: var(--code-bg); padding: 10px 14px; border-radius: 4px;
+            overflow-x: auto; font-family: 'SF Mono', 'Monaco', 'Menlo', 'Consolas', monospace;
+            font-size: 13px; line-height: 1.5; border: 1px solid var(--border);
+        }
+        .content code {
+            background: var(--code-bg); padding: 1px 4px; border-radius: 3px;
+            font-family: 'SF Mono', 'Monaco', 'Menlo', 'Consolas', monospace;
+            font-size: 13px;
+        }
+        .content pre code { background: none; padding: 0; }
+        .content table { border-collapse: collapse; margin-bottom: 1em; width: 100%; }
+        .content th, .content td { border: 1px solid var(--border); padding: 5px 8px; text-align: left; font-size: 13px; }
+        .content th { font-weight: 600; }
+        .content blockquote { border-left: 3px solid var(--border); padding-left: 14px; color: var(--grey); margin-bottom: 1em; }
+        .content img { max-width: 100%; }
+
+        /* Queue table */
+        table.queue { width: 100%; border-collapse: collapse; font-size: 13px; }
+        table.queue th, table.queue td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+        table.queue th { font-weight: 600; color: var(--grey); font-size: 11px; text-transform: uppercase; }
+        .status { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+        .status-queued { background: #312e81; color: #c7d2fe; }
+        .status-running { background: #14532d; color: #bbf7d0; }
+        .status-completed { background: var(--code-bg); color: var(--grey); }
+        .status-failed { background: #7f1d1d; color: #fecaca; }
+
+        /* Prompt box */
+        .prompt-content {
+            background: var(--code-bg); border-radius: 4px; padding: 14px;
+            margin-bottom: 1.2em; white-space: pre-wrap; line-height: 1.5;
+            border: 1px solid var(--border); font-size: 13px;
+        }
+
+        /* Buttons */
+        .btn { font-size: 12px; padding: 4px 12px; border: none; border-radius: 3px; cursor: pointer; font-family: inherit; background: #3d7ea6; color: #e0e0e0; }
+        .btn:hover { background: #4a90b8; }
+        .btn:disabled { opacity: 0.4; cursor: wait; }
+
+        /* Messages */
+        .messages { margin-bottom: 1em; }
+        .messages .error { color: #fecaca; background: #7f1d1d; padding: 8px 14px; border-radius: 4px; font-size: 13px; }
+        .messages .success { color: #bbf7d0; background: #14532d; padding: 8px 14px; border-radius: 4px; font-size: 13px; }
+        .messages .info { color: var(--grey); background: var(--card-bg); padding: 8px 14px; border-radius: 4px; font-size: 13px; border: 1px solid var(--border); }
+
+        /* Light theme */
+        body.light {
+            --bg: #f8f8f8; --text: #1a1a1a; --grey: #888; --border: #e0e0e0;
+            --code-bg: #f0f0f0; --card-bg: #fff; --topbar-bg: #2a2a2a;
+            --topbar-border: #3a3a3a; --selected: #e8f0fa; --selected-border: #5b9bd5;
+            --accent: #c08050; --link: #c08050;
+        }
+        body.light .browse-section { color: var(--accent); background: #f0f0f0; }
+        body.light .status-queued { background: #e0e7ff; color: #3730a3; }
+        body.light .status-running { background: #dcfce7; color: #166534; }
+        body.light .status-failed { background: #fee2e2; color: #991b1b; }
+        body.light .messages .error { color: #991b1b; background: #fee2e2; }
+        body.light .messages .success { color: #166534; background: #dcfce7; }
+
+        {% block extra_css %}{% endblock %}
+    </style>
+</head>
+<body class="{% if user_theme == 'light' %}light{% endif %}">
+    <div class="topbar">
+        <div style="display:flex;align-items:center;">
+            <span class="topbar-brand"><a href="{% url 'codoc:home' %}">codoc-ai</a></span>
+            <span class="topbar-nav">
+                <a href="{% url 'codoc:home' %}">Documents</a>
+                <a href="{% url 'codoc:queue' %}">Queue</a>
+                <a href="{% url 'codoc:prompts' %}">Prompts</a>
+                <a href="{% url 'codoc:sysprompts' %}">System Prompts</a>
+                <a href="{% url 'codoc:definitions' %}">Definitions</a>
+                {% if user.is_authenticated %}<a href="{% url 'codoc:logs' %}">Logs</a>{% endif %}
+                <a href="{% url 'codoc:about' %}">About</a>
+                <span class="topbar-sep">|</span>
+                <a href="https://eicweb.phy.anl.gov/EIC/lxr/" target="_blank">LXR</a>
+                <a href="https://github.com/eic" target="_blank">GitHub/EIC</a>
+            </span>
+        </div>
+        <div class="topbar-right">
+            {% if user.is_authenticated %}
+                <span class="username">{{ user.username }}</span>
+                <a href="{% url 'account' %}">Account</a>
+                <a href="{% url 'logout' %}" onclick="event.preventDefault();document.getElementById('logout-form').submit();">Logout</a>
+                <form id="logout-form" method="post" action="{% url 'logout' %}" style="display:none;">{% csrf_token %}</form>
+            {% else %}
+                <a href="{% url 'login' %}">Login</a>
+            {% endif %}
+        </div>
+    </div>
+    {% block page %}
+    <div class="page">
+        <div class="main">
+            {% block nav %}{% endblock %}
+            {% block body %}{% endblock %}
+        </div>
+    </div>
+    {% endblock %}
+<script>
+// Global: show active job indicator in topbar, auto-refresh non-edit pages
+(function() {
+    function checkActive() {
+        fetch('{% url "codoc:queue_status" %}')
+            .then(r => r.json())
+            .then(data => {
+                const n = data.jobs.filter(j => j.status === 'queued' || j.status === 'running').length;
+                let ind = document.getElementById('active-jobs-indicator');
+                if (!ind) {
+                    ind = document.createElement('span');
+                    ind.id = 'active-jobs-indicator';
+                    ind.style.cssText = 'font-size:11px;margin-left:6px';
+                    document.querySelector('.topbar-nav a[href*="queue"]').appendChild(ind);
+                }
+                ind.textContent = n > 0 ? ' (' + n + ' active)' : '';
+                ind.style.color = n > 0 ? '#bbf7d0' : '';
+            }).catch(() => {});
+    }
+    setInterval(checkActive, 5000);
+    checkActive();
+})();
+</script>
+</body>
+</html>

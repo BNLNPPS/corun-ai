@@ -1,0 +1,45 @@
+from django.urls import path
+from . import views
+
+app_name = 'codoc'
+
+urlpatterns = [
+    path('', views.home, name='home'),
+    path('s/<str:section>/', views.section_detail, name='section'),
+    path('p/<uuid:group_id>/', views.prompt_detail, name='prompt'),
+    path('page/<uuid:group_id>/', views.page_detail, name='page'),
+    path('queue/', views.queue, name='queue'),
+    path('queue/status/', views.queue_status_api, name='queue_status'),
+    path('prepare/', views.prepare_prompt, name='prepare'),
+    path('generate/<uuid:group_id>/', views.generate_from_prompt, name='generate_prompt'),
+    path('definitions/', views.definitions_view, name='definitions'),
+    path('definitions/new/', views.definition_edit, name='definition_new'),
+    path('definitions/<uuid:pk>/', views.definition_fragment, name='definition_fragment'),
+    path('definitions/<uuid:pk>/edit/', views.definition_edit, name='definition_edit'),
+    path('definitions/<uuid:pk>/copy/', views.definition_copy, name='definition_copy'),
+    path('definitions/<uuid:pk>/delete/', views.definition_delete, name='definition_delete'),
+    path('sysprompts/', views.sysprompts_view, name='sysprompts'),
+    path('_fragment/sysprompt/<uuid:group_id>/', views.sysprompt_frag, name='sysprompt_frag'),
+    path('_fragment/sysprompt/<uuid:group_id>/edit/', views.sysprompt_edit_frag, name='sysprompt_edit_frag'),
+    path('_fragment/sysprompt/new/', views.sysprompt_edit_frag, name='sysprompt_new_frag'),
+    path('_api/sysprompt/save/', views.sysprompt_save_api, name='sysprompt_save_api'),
+    path('_api/sysprompt/<uuid:group_id>/delete/', views.sysprompt_delete, name='sysprompt_delete'),
+    path('prompts/', views.prompts_view, name='prompts'),
+    path('_fragment/prompt-view/<uuid:group_id>/', views.prompt_view_frag, name='prompt_view_frag'),
+    path('_fragment/prompt-edit/<uuid:group_id>/', views.prompt_edit_frag, name='prompt_edit_frag'),
+    path('_fragment/prompt-edit/new/', views.prompt_edit_frag, name='prompt_new_frag'),
+    path('logs/', views.logs_view, name='logs'),
+    path('about/', views.about_view, name='about'),
+    path('about/edit/', views.about_edit, name='about_edit'),
+    # AJAX fragments
+    path('_fragment/prompt/<uuid:group_id>/', views.prompt_fragment, name='prompt_fragment'),
+    path('_fragment/page/<uuid:group_id>/', views.page_fragment, name='page_fragment'),
+    path('_fragment/editor/', views.editor_fragment, name='editor_new'),
+    path('_fragment/editor/<uuid:group_id>/', views.editor_fragment, name='editor_version'),
+    path('_api/save-prompt/', views.save_prompt_api, name='save_prompt_api'),
+    path('_api/prompt/<uuid:group_id>/delete/', views.prompt_delete, name='prompt_delete'),
+    path('_api/page/<uuid:group_id>/delete/', views.page_delete, name='page_delete'),
+    path('_api/job/<uuid:pk>/abort/', views.job_abort, name='job_abort'),
+    path('_api/job/<uuid:pk>/rerun/', views.job_rerun, name='job_rerun'),
+    path('_api/job/<uuid:pk>/delete/', views.job_delete, name='job_delete'),
+]

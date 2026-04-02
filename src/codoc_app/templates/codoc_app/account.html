@@ -1,0 +1,37 @@
+{% extends "codoc_app/base.html" %}
+
+{% block title %}Account — ePIC Code Documentation{% endblock %}
+
+{% block nav %}
+<nav><a href="{% url 'codoc:home' %}">Browse</a></nav>
+{% endblock %}
+
+{% block extra_css %}
+.theme-choice { display: flex; gap: 8px; margin-top: 6px; }
+.theme-btn { padding: 6px 16px; border: 1px solid var(--border); border-radius: 4px;
+    cursor: pointer; font-size: 13px; font-family: inherit; }
+.theme-btn.active { border-color: var(--accent); color: var(--accent); }
+.theme-btn:not(.active) { background: var(--card-bg); color: var(--grey); }
+{% endblock %}
+
+{% block body %}
+<h1>Account</h1>
+
+{% if messages %}
+<div class="messages">
+    {% for msg in messages %}<div class="{{ msg.tags }}">{{ msg }}</div>{% endfor %}
+</div>
+{% endif %}
+
+<h2>Theme</h2>
+<form method="post">
+    {% csrf_token %}
+    <div class="theme-choice">
+        <button type="submit" name="theme" value="dark" class="theme-btn {% if profile.theme == 'dark' %}active{% endif %}">Dark</button>
+        <button type="submit" name="theme" value="light" class="theme-btn {% if profile.theme == 'light' %}active{% endif %}">Light</button>
+    </div>
+</form>
+
+<h2>Password</h2>
+<p><a href="{% url 'password_change' %}">Change password</a></p>
+{% endblock %}

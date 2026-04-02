@@ -1,0 +1,29 @@
+{% extends "codoc_app/base.html" %}
+
+{% block title %}Configuration — ePIC Code Documentation{% endblock %}
+
+{% block nav %}
+<nav><a href="{% url 'codoc:home' %}">Browse</a></nav>
+{% endblock %}
+
+{% block body %}
+<h1>Job Definitions</h1>
+
+{% for cfg in configs %}
+<div class="card" style="padding:14px 18px">
+    <h3>{{ cfg.definition.name }}</h3>
+    {% if cfg.definition.description %}<p style="margin-bottom:8px">{{ cfg.definition.description }}</p>{% endif %}
+    <p>Model: <strong>{{ cfg.definition.data.model|default:"sonnet" }}</strong> · Effort: <strong>{{ cfg.definition.data.effort|default:"high" }}</strong></p>
+    {% if cfg.definition.data.mcp_tools %}
+    <p>MCP tools: <strong>{{ cfg.definition.data.mcp_tools|join:", " }}</strong></p>
+    {% endif %}
+    {% if cfg.sysprompt %}
+    <p style="margin-top:8px">System prompt: <a href="{% url 'codoc:sysprompt' cfg.sysprompt.group_id %}">{{ cfg.sysprompt.name }} v{{ cfg.sysprompt.version }}</a>
+        {% if user.is_authenticated %}· <a href="{% url 'codoc:sysprompt_edit' cfg.sysprompt.group_id %}">edit</a>{% endif %}
+    </p>
+    {% endif %}
+</div>
+{% empty %}
+<p class="empty">No job definitions configured.</p>
+{% endfor %}
+{% endblock %}

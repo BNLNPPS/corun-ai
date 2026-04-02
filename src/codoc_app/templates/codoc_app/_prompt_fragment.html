@@ -1,0 +1,90 @@
+{% load codoc_filters %}
+<div style="padding:0.75rem">
+    <!-- Owner + definition info -->
+    <div style="font-size:12px;color:var(--grey);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
+        <div>
+            {{ prompt.submitted_by.username }}
+            · {{ prompt.section.title|default:prompt.section.name }}
+            · {{ prompt.status }} · v{{ prompt.version }}
+            · {{ prompt.created_at|date:"M j H:i" }}
+            {% if job_def %}
+            · <a href="{% url 'codoc:definitions' %}">{{ job_def.name }}</a>
+            · {{ job_def.data.model|default:"sonnet" }}/{{ job_def.data.effort|default:"high" }}
+            {% if job_def.data.mcp_tools %} · {{ job_def.data.mcp_tools|join:", " }}{% endif %}
+            {% endif %}
+            · <a href="{% url 'codoc:prompt' prompt.group_id %}">permalink</a>
+        </div>
+        {% if user.is_authenticated and user == prompt.submitted_by %}
+        <button class="btn" style="background:#7f1d1d;font-size:11px;padding:2px 8px;margin-left:12px" onclick="deletePrompt('{{ prompt.group_id }}')">Delete</button>
+        {% endif %}
+    </div>
+
+    <!-- User prompt — prominent -->
+    <div class="prompt-content">{{ prompt.content }}</div>
+
+    <!-- Actions -->
+    <div style="display:flex;gap:8px;margin-bottom:16px">
+        {% if user.is_authenticated %}
+        <button class="btn" onclick="loadEditor('{{ prompt.group_id }}')">New Version</button>
+        {% if prompt.status == 'saved' %}
+        <button class="btn" id="gen-btn-{{ prompt.group_id }}" onclick="generatePrompt('{{ prompt.group_id }}', this)">Generate</button>
+        {% endif %}
+        {% endif %}
+    </div>
+
+    <!-- Generated pages -->
+    {% if pages %}
+    {% for page in pages %}
+    <div style="margin-bottom:16px">
+        <div style="font-size:12px;color:var(--grey);margin-bottom:6px">
+            Page v{{ page.version }} · {{ page.created_at|date:"M j H:i" }}
+            {% if page.data.generation_model %} · {{ page.data.generation_model }}{% endif %}
+            {% if page.data.generation_time_s %} · {{ page.data.generation_time_s|duration }}{% endif %}
+            · <a href="{% url 'codoc:page' page.group_id %}">permalink</a>
+        </div>
+        <div class="content">
+            {% if page.content_rendered %}
+                {{ page.content_rendered|safe }}
+            {% else %}
+                <pre>{{ page.content }}</pre>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+    {% else %}
+        {% if prompt.status == 'queued' or prompt.status == 'generating' %}
+        <p style="font-size:13px">
+            <span class="status status-{{ prompt.status }}">{{ prompt.status }}</span>
+            — <a href="{% url 'codoc:queue' %}">view in queue</a>
+        </p>
+        {% elif prompt.status == 'saved' %}
+        <p class="empty">No pages generated yet.</p>
+        {% endif %}
+    {% endif %}
+</div>
+
+<script>
+function generatePrompt(groupId, btn) {
+    btn.disabled = true;
+    btn.textContent = 'Queued...';
+    fetch('{% url "codoc:generate_prompt" "00000000-0000-0000-0000-000000000000" %}'.replace('00000000-0000-0000-0000-000000000000', groupId), {
+        method: 'POST',
+        headers: {'X-CSRFToken': '{{ csrf_token }}', 'X-Requested-With': 'XMLHttpRequest'},
+    }).then(r => r.json()).then(data => {
+        if (data.ok) {
+            window.location.href = '{% url "codoc:queue" %}';
+        }
+    }).catch(err => { btn.disabled = false; btn.textContent = 'Generate'; alert('Generate failed: ' + err); });
+}
+
+function deletePrompt(groupId) {
+    if (!confirm('Delete this prompt and its pages?')) return;
+    fetch('{% url "codoc:prompt_delete" "00000000-0000-0000-0000-000000000000" %}'.replace('00000000-0000-0000-0000-000000000000', groupId), {
+        method: 'POST',
+        headers: {'X-CSRFToken': '{{ csrf_token }}'},
+    }).then(r => r.json()).then(data => {
+        if (data.ok) { window.location.reload(); }
+        else { alert(data.error || 'Delete failed'); }
+    }).catch(err => alert('Delete failed: ' + err));
+}
+</script>
