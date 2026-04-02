@@ -28,11 +28,13 @@ django.setup()
 import markdown as md_lib
 from django.utils import timezone
 
-from corun_app.models import AppLog, Job, JobDefinition, Page, Prompt, SystemPrompt
+from corun_app.models import AppLog, GEMINI_MODELS, Job, JobDefinition, Page, Prompt, SystemPrompt
 
 logger = logging.getLogger('corun.worker')
 
 CLAUDE_PATHS = ['/home/admin/.local/bin/claude', '/usr/local/bin/claude']
+GEMINI_PATHS = ['/home/admin/.nvm/versions/node/v24.13.1/bin/gemini',
+                '/usr/local/bin/gemini']
 DEFAULT_TIMEOUT = 1800  # 30 minutes
 
 
@@ -41,6 +43,13 @@ def _find_claude():
         if os.path.isfile(p) and os.access(p, os.X_OK):
             return p
     raise RuntimeError("claude CLI not found at: " + ", ".join(CLAUDE_PATHS))
+
+
+def _find_gemini():
+    for p in GEMINI_PATHS:
+        if os.path.isfile(p) and os.access(p, os.X_OK):
+            return p
+    raise RuntimeError("gemini CLI not found at: " + ", ".join(GEMINI_PATHS))
 
 
 def _log(level, message, **kwargs):
@@ -61,15 +70,19 @@ def _log(level, message, **kwargs):
 
 class RunningJob:
     """Tracks a running subprocess."""
-    __slots__ = ('job_id', 'prompt_id', 'job_def_id', 'process', 'timeout', 'started')
+    __slots__ = ('job_id', 'prompt_id', 'job_def_id', 'process', 'timeout', 'started',
+                 'use_gemini', 'job_dir')
 
-    def __init__(self, job_id, prompt_id, job_def_id, process, timeout):
+    def __init__(self, job_id, prompt_id, job_def_id, process, timeout,
+                 use_gemini=False, job_dir=None):
         self.job_id = job_id
         self.prompt_id = prompt_id
         self.job_def_id = job_def_id
         self.process = process
         self.timeout = timeout
         self.started = time.monotonic()
+        self.use_gemini = use_gemini
+        self.job_dir = job_dir
 
 
 class Worker:
@@ -159,8 +172,6 @@ class Worker:
         if not prompt:
             raise RuntimeError("Job has no prompt")
 
-        claude_path = _find_claude()
-
         # System prompt
         sp_group_id = job_def.data.get('system_prompt_group_id')
         system_prompt = None
@@ -174,16 +185,38 @@ class Worker:
         model = job_def.data.get('model', 'sonnet')
         timeout = job_def.data.get('timeout_s', DEFAULT_TIMEOUT)
 
-        cmd = [
-            claude_path, '-p',
-            '--system-prompt', system_prompt.content,
-            '--output-format', 'text',
-            '--model', model,
-        ]
+        if model in GEMINI_MODELS:
+            gemini_path = _find_gemini()
+            # Gemini CLI: combine system + user prompt into -p
+            # Run from a job-specific dir so write_file output lands there
+            job_dir = os.path.join('/var/www/corun-ai/data/jobs', str(job.id))
+            os.makedirs(job_dir, exist_ok=True)
+            combined = (
+                f"SYSTEM INSTRUCTIONS (follow these for all responses):\n"
+                f"{system_prompt.content}\n\n"
+                f"USER REQUEST:\n{prompt.content}"
+            )
+            cmd = [
+                gemini_path,
+                '-m', model,
+                '--yolo',
+                '-o', 'text',
+                '-p', combined,
+            ]
+            use_gemini = True
+        else:
+            claude_path = _find_claude()
+            cmd = [
+                claude_path, '-p',
+                '--system-prompt', system_prompt.content,
+                '--output-format', 'text',
+                '--model', model,
+            ]
+            use_gemini = False
 
         env = {
             'HOME': '/home/admin',
-            'PATH': '/home/admin/.local/bin:/usr/local/bin:/usr/bin:/bin',
+            'PATH': '/home/admin/.nvm/versions/node/v24.13.1/bin:/home/admin/.local/bin:/usr/local/bin:/usr/bin:/bin',
             'PYTHONIOENCODING': 'utf-8',
             'LANG': 'C.UTF-8',
             'LC_ALL': 'C.UTF-8',
@@ -207,8 +240,10 @@ class Worker:
             stderr=subprocess.PIPE,
             text=True,
             env=env,
+            cwd=job_dir if use_gemini else None,
         )
-        proc.stdin.write(prompt.content)
+        if not use_gemini:
+            proc.stdin.write(prompt.content)
         proc.stdin.close()
 
         self.running[str(job.id)] = RunningJob(
@@ -217,6 +252,8 @@ class Worker:
             job_def_id=str(job_def.id),
             process=proc,
             timeout=timeout,
+            use_gemini=use_gemini,
+            job_dir=job_dir if use_gemini else None,
         )
 
         _log('info',
@@ -257,14 +294,37 @@ class Worker:
                 stdout = rj.process.stdout.read()
                 stderr = rj.process.stderr.read()
 
-                if retcode == 0 and stdout.strip():
+                if rj.use_gemini and rj.job_dir:
+                    # Gemini writes output to files; stdout is thinking trace
+                    import glob
+                    md_files = glob.glob(os.path.join(rj.job_dir, '*.md'))
+                    if md_files:
+                        # Use the largest .md file as the output
+                        output_file = max(md_files, key=os.path.getsize)
+                        with open(output_file) as f:
+                            content = f.read().strip()
+                        # Save thinking trace
+                        if stdout.strip():
+                            with open(os.path.join(rj.job_dir, 'thinking.txt'), 'w') as f:
+                                f.write(stdout)
+                        if content:
+                            self._complete_job(rj, content, elapsed, has_thinking=bool(stdout.strip()))
+                        else:
+                            self._finish_job(rj, 'failed', 'Gemini wrote empty output file')
+                    elif retcode == 0 and stdout.strip():
+                        # No file written — stdout IS the output (maybe with -o text)
+                        self._complete_job(rj, stdout.strip(), elapsed)
+                    else:
+                        self._finish_job(rj, 'failed',
+                                         f'Gemini produced no output (rc={retcode}, stderr: {stderr[:200]})')
+                elif retcode == 0 and stdout.strip():
                     self._complete_job(rj, stdout.strip(), elapsed)
                 elif retcode == 0:
                     self._finish_job(rj, 'failed',
-                                     f'claude -p returned empty output (stderr: {stderr[:200]})')
+                                     f'CLI returned empty output (stderr: {stderr[:200]})')
                 else:
                     self._finish_job(rj, 'failed',
-                                     f'claude -p exited {retcode}: {stderr[:300]}')
+                                     f'CLI exited {retcode}: {stderr[:300]}')
                 continue
 
             # Timeout?
@@ -280,14 +340,14 @@ class Worker:
                     pass
                 self._finish_job(rj, 'failed', f'Timed out after {rj.timeout}s')
 
-    def _complete_job(self, rj, content_md, elapsed):
+    def _complete_job(self, rj, content_md, elapsed, has_thinking=False):
         try:
             job = Job.objects.get(id=rj.job_id)
             prompt = Prompt.objects.get(id=rj.prompt_id)
             job_def = JobDefinition.objects.get(id=rj.job_def_id)
 
-            md = md_lib.Markdown(extensions=['fenced_code', 'tables', 'toc'])
-            content_html = md.convert(content_md)
+            md_converter = md_lib.Markdown(extensions=['fenced_code', 'tables', 'toc'])
+            content_html = md_converter.convert(content_md)
 
             group_id = uuid.uuid4()
             page = Page.objects.create(
@@ -308,6 +368,7 @@ class Worker:
                     'generation_time_s': round(elapsed, 1),
                     'job_id': str(job.id),
                     'system_prompt_version': job.data.get('system_prompt_version'),
+                    'has_thinking': has_thinking,
                     'definition_id': str(job_def.id),
                     'definition_name': job_def.name,
                 },

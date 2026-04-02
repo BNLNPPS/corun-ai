@@ -8,6 +8,17 @@ Versioning is in-table: each row is a version, group_id ties versions together.
 import uuid
 
 from django.conf import settings
+
+# Model registry: (value, label, group). Single source of truth.
+MODEL_CHOICES = [
+    ('opus', 'Opus', 'Claude'),
+    ('sonnet', 'Sonnet', 'Claude'),
+    ('haiku', 'Haiku', 'Claude'),
+    ('gemini-2.5-flash', 'Gemini 2.5 Flash', 'Gemini'),
+    ('gemini-2.5-pro', 'Gemini 2.5 Pro', 'Gemini'),
+]
+
+GEMINI_MODELS = {m[0] for m in MODEL_CHOICES if m[2] == 'Gemini'}
 from django.db import models
 
 

@@ -22,6 +22,17 @@
     <div class="prompt-content">{{ page.prompt.content }}</div>
     {% endif %}
 
+    {% if page.data.has_thinking %}
+    <div style="margin-bottom:8px">
+        <a href="#" onclick="event.preventDefault();toggleThinking()" style="font-size:13px;color:var(--accent)">
+            <span id="thinking-toggle-label">Show thinking trace</span>
+        </a>
+        <div id="thinking-content" style="display:none;margin-top:8px">
+            <pre style="font-size:12px;white-space:pre-wrap;background:var(--code-bg);padding:12px;border-radius:4px;max-height:400px;overflow-y:auto;color:var(--grey)">Loading...</pre>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Rendered content -->
     <div class="content">
         {% if page.content_rendered %}
@@ -33,6 +44,24 @@
 </div>
 
 <script>
+function toggleThinking() {
+    var el = document.getElementById('thinking-content');
+    var label = document.getElementById('thinking-toggle-label');
+    if (el.style.display === 'none') {
+        el.style.display = 'block';
+        label.textContent = 'Hide thinking trace';
+        if (el.querySelector('pre').textContent === 'Loading...') {
+            fetch('{% url "codoc:job_thinking" "00000000-0000-0000-0000-000000000000" %}'.replace('00000000-0000-0000-0000-000000000000', '{{ page.data.job_id }}'))
+                .then(r => r.text())
+                .then(text => { el.querySelector('pre').textContent = text.replace(/\n/g, '\n\n'); })
+                .catch(err => { el.querySelector('pre').textContent = 'Failed to load: ' + err; });
+        }
+    } else {
+        el.style.display = 'none';
+        label.textContent = 'Show thinking trace';
+    }
+}
+
 function deletePage(groupId) {
     if (!confirm('Delete this page?')) return;
     fetch('{% url "codoc:page_delete" "00000000-0000-0000-0000-000000000000" %}'.replace('00000000-0000-0000-0000-000000000000', groupId), {

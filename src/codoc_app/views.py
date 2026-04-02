@@ -36,9 +36,18 @@ def home(request):
             is_current=True,
         ).exclude(status='rejected').order_by('-created_at'))
 
+        # Comment counts per prompt group
+        from django.db.models import Count
+        comment_counts = dict(
+            Comment.objects.filter(
+                prompt_group__in=[p.group_id for p in current_prompts]
+            ).values_list('prompt_group').annotate(n=Count('id')).values_list('prompt_group', 'n')
+        )
+
         # For each prompt group, get all versions + their pages
         browse_items = []
         for cp in current_prompts:
+            cp.comment_count = comment_counts.get(cp.group_id, 0)
             all_pages = list(Page.objects.filter(
                 prompt__group_id=cp.group_id,
                 is_current=True, status='published',
@@ -98,14 +107,30 @@ def prompt_info_fragment(request, group_id):
     vid = request.GET.get('vid')
     if vid:
         prompt = get_object_or_404(Prompt, id=vid)
-        pages = list(Page.objects.filter(prompt=prompt, is_current=True, status='published').order_by('-created_at'))
+        # Show pages from same-text versions (same logic as browse tree)
+        same_text_ids = list(Prompt.objects.filter(
+            group_id=prompt.group_id, content=prompt.content
+        ).values_list('id', flat=True))
+        pages = list(Page.objects.filter(
+            prompt_id__in=same_text_ids, is_current=True, status='published'
+        ).order_by('-created_at'))
     else:
         prompt = get_object_or_404(Prompt, group_id=group_id, is_current=True)
+        same_text_ids = list(Prompt.objects.filter(
+            group_id=group_id, content=prompt.content
+        ).values_list('id', flat=True))
         pages = list(Page.objects.filter(
-            prompt__group_id=group_id, is_current=True, status='published').order_by('-created_at'))
+            prompt_id__in=same_text_ids, is_current=True, status='published'
+        ).order_by('-created_at'))
+    # Active jobs for this prompt group
+    active_jobs = list(Job.objects.filter(
+        prompt__group_id=group_id,
+        status__in=['queued', 'running'],
+    ).select_related('definition').order_by('-created_at'))
+
     comments = Comment.objects.filter(prompt_group=group_id).select_related('author')
     html = render_to_string('codoc_app/_prompt_info_fragment.html', {
-        'prompt': prompt, 'pages': pages, 'comments': comments,
+        'prompt': prompt, 'pages': pages, 'active_jobs': active_jobs, 'comments': comments,
     }, request=request)
     return HttpResponse(html)
 
@@ -577,6 +602,12 @@ def definition_fragment(request, pk):
     if sp_gid:
         sp = SystemPrompt.objects.filter(group_id=sp_gid, is_current=True).first()
     sysprompts = SystemPrompt.objects.filter(is_current=True)
+    from corun_app.models import GEMINI_MODELS
+    model = d.data.get('model', 'sonnet')
+    if model in GEMINI_MODELS:
+        d.data['cli_preview'] = f'gemini -m {model} --yolo -p "<prompt>"'
+    else:
+        d.data['cli_preview'] = f'claude -p --model {model} --system-prompt "..." --output-format text'
     html = render_to_string('codoc_app/_definition_fragment.html', {
         'definition': d, 'sysprompt': sp, 'sysprompts': sysprompts,
     }, request=request)
@@ -638,9 +669,18 @@ def definition_edit(request, pk=None):
             sp = SystemPrompt.objects.filter(group_id=sp_gid, is_current=True).first()
             if sp:
                 current_sp_content = sp.content
+    from corun_app.models import MODEL_CHOICES
+    from collections import OrderedDict
+    _mg = OrderedDict()
+    for value, label, group in MODEL_CHOICES:
+        _mg.setdefault(group, []).append((value, label))
+    model_groups = list(_mg.items())
+    sp_contents = {str(sp.group_id): sp.content for sp in sysprompts}
     html = render_to_string('codoc_app/_definition_edit_fragment.html', {
         'definition': d, 'sysprompts': sysprompts,
         'current_sp_content': current_sp_content,
+        'model_groups': model_groups,
+        'sp_contents_json': json.dumps(sp_contents),
     }, request=request)
     return HttpResponse(html)
 
@@ -753,6 +793,19 @@ def sysprompt_delete(request, group_id):
         return JsonResponse({'error': f'Referenced by {refs} definition(s). Remove references first.'}, status=400)
     SystemPrompt.objects.filter(group_id=group_id).delete()
     return JsonResponse({'ok': True})
+
+
+# ── Job artifacts ─────────────────────────────────────────────────────────────
+
+def job_thinking(request, job_id):
+    """Serve the thinking trace file for a job."""
+    import os
+    path = os.path.join('/var/www/corun-ai/data/jobs', str(job_id), 'thinking.txt')
+    try:
+        with open(path) as f:
+            return HttpResponse(f.read(), content_type='text/plain')
+    except FileNotFoundError:
+        return HttpResponse('No thinking trace available.', content_type='text/plain', status=404)
 
 
 # ── About ────────────────────────────────────────────────────────────────────

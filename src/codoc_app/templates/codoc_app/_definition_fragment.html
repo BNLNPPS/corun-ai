@@ -32,6 +32,11 @@
     </div>
     {% endif %}
 
+    <div style="font-size:12px;color:var(--grey);margin-bottom:8px">
+        <span style="color:var(--grey)">Command:</span>
+        <code style="color:var(--text)">{{ definition.data.cli_preview }}</code>
+    </div>
+
     <div style="font-size:12px;color:var(--grey);margin-bottom:12px">
         Status: {{ definition.status }}
         · Created: {{ definition.created_at|date:"M j H:i" }}
