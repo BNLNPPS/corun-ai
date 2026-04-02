@@ -63,13 +63,6 @@ class Command(BaseCommand):
                 user.save(update_fields=['password'])
                 created += 1
                 self.stdout.write(self.style.SUCCESS(f'  Created: {username}'))
-            elif user.password != pw_hash:
-                user.password = pw_hash
-                user.is_staff = is_staff
-                user.is_superuser = is_superuser
-                user.save(update_fields=['password', 'is_staff', 'is_superuser'])
-                updated += 1
-                self.stdout.write(f'  Updated: {username}')
             else:
                 unchanged += 1
 

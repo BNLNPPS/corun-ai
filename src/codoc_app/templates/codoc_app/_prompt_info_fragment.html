@@ -21,4 +21,69 @@
     {% else %}
     <p class="empty" style="margin-top:12px">No pages generated yet.</p>
     {% endif %}
+
+    <!-- Comments / Assessment -->
+    <div style="margin-top:24px;border-top:1px solid var(--border);padding-top:16px">
+        <h3 style="font-size:13px;color:var(--accent);margin-bottom:12px">Assessment & Discussion ({{ comments|length }})</h3>
+
+        {% if user.is_authenticated %}
+        <form id="comment-form" onsubmit="return false;" style="margin-bottom:16px">
+            {% csrf_token %}
+            <textarea id="comment-text" placeholder="Add your assessment..."
+                style="width:100%;min-height:80px;font-family:inherit;font-size:13px;padding:8px 10px;border:1px solid var(--border);border-radius:4px;background:var(--card-bg);color:var(--text);resize:vertical;line-height:1.5"></textarea>
+            <div style="display:flex;justify-content:flex-end;margin-top:6px">
+                <button class="btn" onclick="postComment()">Post</button>
+            </div>
+        </form>
+        {% else %}
+        <p style="font-size:13px;color:var(--grey);margin-bottom:12px"><a href="{% url 'login' %}">Login</a> to post comments.</p>
+        {% endif %}
+
+        <div id="comments-list">
+        {% for c in comments %}
+            <div style="margin-bottom:12px;padding:8px 10px;background:var(--code-bg);border-radius:4px">
+                <div style="font-size:12px;color:var(--grey);margin-bottom:4px">
+                    {{ c.author.username }} · {{ c.created_at|date:"M j H:i" }}
+                    {% if user.is_authenticated and user == c.author %}
+                    <a href="#" onclick="event.preventDefault();deleteComment('{{ c.id }}')" style="color:var(--grey);margin-left:8px" title="Delete">✕</a>
+                    {% endif %}
+                </div>
+                <div style="font-size:13px;white-space:pre-wrap">{{ c.content }}</div>
+            </div>
+        {% empty %}
+            <p class="empty">No comments yet.</p>
+        {% endfor %}
+        </div>
+    </div>
 </div>
+
+<script>
+function postComment() {
+    var text = document.getElementById('comment-text').value.trim();
+    if (!text) return;
+    var formData = new FormData();
+    formData.set('content', text);
+    formData.set('prompt_group', '{{ prompt.group_id }}');
+    fetch('{% url "codoc:comment_post" %}', {
+        method: 'POST', body: formData,
+        headers: {'X-CSRFToken': document.querySelector('#comment-form [name=csrfmiddlewaretoken]').value},
+    }).then(r => r.json()).then(data => {
+        if (data.error) { alert(data.error); return; }
+        // Reload the fragment to show the new comment
+        var el = document.querySelector('.browse-item.selected');
+        if (el && typeof loadDetail === 'function') loadDetail(el);
+    });
+}
+function deleteComment(id) {
+    if (!confirm('Delete this comment?')) return;
+    fetch('{% url "codoc:comment_delete" "00000000-0000-0000-0000-000000000000" %}'.replace('00000000-0000-0000-0000-000000000000', id), {
+        method: 'POST',
+        headers: {'X-CSRFToken': document.querySelector('#comment-form [name=csrfmiddlewaretoken]').value},
+    }).then(r => r.json()).then(data => {
+        if (data.ok) {
+            var el = document.querySelector('.browse-item.selected');
+            if (el && typeof loadDetail === 'function') loadDetail(el);
+        }
+    });
+}
+</script>

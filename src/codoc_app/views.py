@@ -17,7 +17,7 @@ from django.views.decorators.http import require_POST
 import markdown as md_lib
 
 from corun_app.models import (
-    AppLog, Job, JobDefinition, Page, Prompt, Section,
+    AppLog, Comment, Job, JobDefinition, Page, Prompt, Section,
     SiteContent, SystemPrompt, UserProfile,
 )
 
@@ -103,8 +103,9 @@ def prompt_info_fragment(request, group_id):
         prompt = get_object_or_404(Prompt, group_id=group_id, is_current=True)
         page_count = Page.objects.filter(
             prompt__group_id=group_id, is_current=True, status='published').count()
+    comments = Comment.objects.filter(prompt_group=group_id).select_related('author')
     html = render_to_string('codoc_app/_prompt_info_fragment.html', {
-        'prompt': prompt, 'page_count': page_count,
+        'prompt': prompt, 'page_count': page_count, 'comments': comments,
     }, request=request)
     return HttpResponse(html)
 
@@ -523,6 +524,35 @@ def job_delete(request, pk):
     return JsonResponse({'ok': True})
 
 
+# ── Comments ──────────────────────────────────────────────────────────────────
+
+@require_POST
+@login_required
+def comment_post(request):
+    """Post a comment on a prompt group."""
+    content = request.POST.get('content', '').strip()
+    prompt_group = request.POST.get('prompt_group', '').strip()
+    if not content or not prompt_group:
+        return JsonResponse({'error': 'Content and prompt_group required.'}, status=400)
+    Comment.objects.create(
+        prompt_group=prompt_group,
+        author=request.user,
+        content=content,
+    )
+    return JsonResponse({'ok': True})
+
+
+@require_POST
+@login_required
+def comment_delete(request, pk):
+    """Delete a comment. Author only."""
+    comment = get_object_or_404(Comment, id=pk)
+    if comment.author != request.user:
+        return JsonResponse({'error': 'Not your comment.'}, status=403)
+    comment.delete()
+    return JsonResponse({'ok': True})
+
+
 # ── Logs ─────────────────────────────────────────────────────────────────────
 
 @login_required
@@ -728,25 +758,45 @@ def sysprompt_delete(request, group_id):
 # ── About ────────────────────────────────────────────────────────────────────
 
 def about_view(request):
-    content = SiteContent.objects.filter(slug='about').first()
-    return render(request, 'codoc_app/about.html', {'content': content})
+    content = SiteContent.objects.filter(slug='about', is_current=True).first()
+    versions = list(SiteContent.objects.filter(slug='about').order_by('-version'))
+    return render(request, 'codoc_app/about.html', {'content': content, 'versions': versions})
+
+
+def about_version_api(request, version):
+    """Return a specific about page version's content as JSON."""
+    sc = get_object_or_404(SiteContent, slug='about', version=version)
+    return JsonResponse({
+        'content': sc.content, 'version': sc.version,
+        'modified_at': sc.modified_at.strftime('%b %-d %H:%M'),
+        'is_current': sc.is_current,
+    })
 
 
 @login_required
 def about_edit(request):
-    content, _ = SiteContent.objects.get_or_create(
-        slug='about', defaults={'title': 'About', 'content': ''})
+    current = SiteContent.objects.filter(slug='about', is_current=True).first()
+    if not current:
+        current = SiteContent.objects.create(
+            slug='about', title='About', content='', is_current=True, version=1)
 
     if request.method == 'POST':
         text = request.POST.get('content', '').strip()
-        content.content = text
-        content.content_rendered = md_lib.markdown(text, extensions=['fenced_code', 'tables'])
-        content.modified_by = request.user
-        content.save()
+        if text != current.content:
+            # Mark old as superseded, create new version
+            current.is_current = False
+            current.save(update_fields=['is_current'])
+            SiteContent.objects.create(
+                slug='about', title='About',
+                version=current.version + 1, is_current=True,
+                content=text,
+                content_rendered=md_lib.markdown(text, extensions=['fenced_code', 'tables', 'toc']),
+                modified_by=request.user,
+            )
         messages.success(request, 'About page updated.')
         return redirect('codoc:about')
 
-    return render(request, 'codoc_app/about_edit.html', {'content': content})
+    return render(request, 'codoc_app/about_edit.html', {'content': current})
 
 
 # ── ePIC PRs ─────────────────────────────────────────────────────────────────

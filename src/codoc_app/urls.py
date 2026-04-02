@@ -31,6 +31,7 @@ urlpatterns = [
     path('logs/', views.logs_view, name='logs'),
     path('about/', views.about_view, name='about'),
     path('about/edit/', views.about_edit, name='about_edit'),
+    path('_api/about/v/<int:version>/', views.about_version_api, name='about_version'),
     # AJAX fragments
     path('_fragment/prompt/<uuid:group_id>/', views.prompt_fragment, name='prompt_fragment'),
     path('_fragment/prompt-info/<uuid:group_id>/', views.prompt_info_fragment, name='prompt_info_fragment'),
@@ -45,6 +46,8 @@ urlpatterns = [
     path('_api/job/<uuid:pk>/delete/', views.job_delete, name='job_delete'),
     path('_api/prompt/<uuid:group_id>/v/<int:version>/', views.prompt_version_api, name='prompt_version'),
     path('_api/sysprompt/<uuid:group_id>/v/<int:version>/', views.sysprompt_version_api, name='sysprompt_version'),
+    path('_api/comment/post/', views.comment_post, name='comment_post'),
+    path('_api/comment/<uuid:pk>/delete/', views.comment_delete, name='comment_delete'),
     path('prs/', views.epic_prs_view, name='epic_prs'),
     path('_api/prs/', views.epic_prs_api, name='epic_prs_api'),
 ]

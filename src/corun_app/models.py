@@ -89,9 +89,10 @@ class Page(models.Model):
 
 
 class Comment(models.Model):
-    """Community discussion on a page."""
+    """Community discussion on a prompt or page."""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    page = models.ForeignKey(Page, on_delete=models.CASCADE, related_name='comments')
+    page = models.ForeignKey(Page, on_delete=models.CASCADE, null=True, blank=True, related_name='comments')
+    prompt_group = models.UUIDField(null=True, blank=True, db_index=True)  # prompt group_id
     author = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='comments')
     content = models.TextField()
@@ -100,7 +101,7 @@ class Comment(models.Model):
     modified_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ['created_at']
+        ordering = ['-created_at']
 
     def __str__(self):
         return f"Comment by {self.author} on {self.page}"
@@ -239,14 +240,22 @@ class UserProfile(models.Model):
 
 
 class SiteContent(models.Model):
-    """Editable site content blocks (about page, etc.)."""
-    slug = models.SlugField(unique=True)
+    """Editable site content blocks (about page, etc.). In-table versioning."""
+    slug = models.SlugField()
+    version = models.PositiveIntegerField(default=1)
+    is_current = models.BooleanField(default=True)
     title = models.CharField(max_length=200)
     content = models.TextField()
     content_rendered = models.TextField(blank=True, default='')
+    data = models.JSONField(default=dict, blank=True)
     modified_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
     modified_at = models.DateTimeField(auto_now=True)
 
+    class Meta:
+        ordering = ['-version']
+        indexes = [models.Index(fields=['slug', '-version'])]
+
     def __str__(self):
-        return self.title
+        return f"{self.title} v{self.version}"

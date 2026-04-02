@@ -2,20 +2,9 @@
 
 {% block title %}Edit About — ePIC Code Documentation{% endblock %}
 
-{% block nav %}
-<nav><a href="{% url 'codoc:home' %}">Browse</a> <a href="{% url 'codoc:about' %}">About</a></nav>
-{% endblock %}
-
-{% block extra_css %}
-textarea { width: 100%; min-height: 400px; font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
-    font-size: 13px; padding: 10px; border: 1px solid var(--border); border-radius: 4px;
-    background: var(--card-bg); color: var(--text); resize: vertical; line-height: 1.5; }
-label { display: block; font-size: 13px; color: var(--grey); margin-bottom: 4px; margin-top: 1em; }
-{% endblock %}
-
 {% block body %}
 <h1>Edit About Page</h1>
-<p class="subtitle">Markdown supported.</p>
+<p class="subtitle">Markdown supported · v{{ content.version }}</p>
 
 {% if messages %}
 <div class="messages">
@@ -23,10 +12,22 @@ label { display: block; font-size: 13px; color: var(--grey); margin-bottom: 4px;
 </div>
 {% endif %}
 
-<form method="post">
+<form method="post" id="about-form">
     {% csrf_token %}
-    <label for="content">Content (markdown)</label>
-    <textarea name="content" id="content">{{ content.content }}</textarea>
-    <div style="margin-top:10px"><button type="submit" class="btn btn-blue">Save</button></div>
+    <textarea name="content" id="about-content">{{ content.content }}</textarea>
+    <div style="margin-top:10px;display:flex;gap:8px">
+        <button type="submit" class="btn">Save</button>
+        <a href="{% url 'codoc:about' %}" class="btn" style="background:transparent;color:var(--grey);border:1px solid var(--border);text-decoration:none;display:inline-flex;align-items:center">Cancel</a>
+    </div>
 </form>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+var _aboutCM = codocEditor(
+    document.getElementById('about-content'),
+    function() { _aboutCM.save(); document.getElementById('about-form').submit(); },
+    {minHeight: '400px', draftKey: 'codoc-draft-about'}
+);
+</script>
 {% endblock %}
