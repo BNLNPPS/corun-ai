@@ -16,8 +16,16 @@
 
     <div class="prompt-content">{{ prompt.content }}</div>
 
-    {% if page_count %}
-    <p style="font-size:13px;color:var(--grey);margin-top:12px">{{ page_count }} generated page{{ page_count|pluralize }} — expand ▶ in browse list to view.</p>
+    {% if pages %}
+    <div style="margin-top:12px">
+        <div style="font-size:13px;color:var(--grey);margin-bottom:6px">Generated pages:</div>
+        {% for pg in pages %}
+        <div style="font-size:13px;margin-bottom:3px">
+            <a href="#" onclick="event.preventDefault();selectPageInTree('{{ pg.group_id }}')" style="color:#90caf9">{{ pg.data.definition_name|default:pg.data.generation_model|default:"page" }}</a>
+            <span style="color:var(--grey)"> · {{ pg.created_at|date:"M j H:i" }}{% if pg.data.generation_time_s %} · {{ pg.data.generation_time_s }}s{% endif %}</span>
+        </div>
+        {% endfor %}
+    </div>
     {% else %}
     <p class="empty" style="margin-top:12px">No pages generated yet.</p>
     {% endif %}
@@ -29,7 +37,7 @@
         {% if user.is_authenticated %}
         <form id="comment-form" onsubmit="return false;" style="margin-bottom:16px">
             {% csrf_token %}
-            <textarea id="comment-text" placeholder="Add your assessment..."
+            <textarea id="comment-text" placeholder="Add your comment..."
                 style="width:100%;min-height:80px;font-family:inherit;font-size:13px;padding:8px 10px;border:1px solid var(--border);border-radius:4px;background:var(--card-bg);color:var(--text);resize:vertical;line-height:1.5"></textarea>
             <div style="display:flex;justify-content:flex-end;margin-top:6px">
                 <button class="btn" onclick="postComment()">Post</button>
@@ -58,6 +66,21 @@
 </div>
 
 <script>
+function selectPageInTree(pageGroupId) {
+    // Expand parent tree if needed, then select the page item
+    var items = document.querySelectorAll('.browse-item');
+    for (var i = 0; i < items.length; i++) {
+        if (items[i].dataset.id === pageGroupId && items[i].dataset.type === 'page') {
+            var parent = items[i].closest('.tree-children');
+            if (parent && parent.style.display === 'none') {
+                var toggle = document.querySelector('[data-target="' + parent.id + '"]');
+                if (toggle) toggleTree(toggle);
+            }
+            if (typeof selectItem === 'function') selectItem(i);
+            return;
+        }
+    }
+}
 function postComment() {
     var text = document.getElementById('comment-text').value.trim();
     if (!text) return;

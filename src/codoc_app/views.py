@@ -98,14 +98,14 @@ def prompt_info_fragment(request, group_id):
     vid = request.GET.get('vid')
     if vid:
         prompt = get_object_or_404(Prompt, id=vid)
-        page_count = Page.objects.filter(prompt=prompt, is_current=True, status='published').count()
+        pages = list(Page.objects.filter(prompt=prompt, is_current=True, status='published').order_by('-created_at'))
     else:
         prompt = get_object_or_404(Prompt, group_id=group_id, is_current=True)
-        page_count = Page.objects.filter(
-            prompt__group_id=group_id, is_current=True, status='published').count()
+        pages = list(Page.objects.filter(
+            prompt__group_id=group_id, is_current=True, status='published').order_by('-created_at'))
     comments = Comment.objects.filter(prompt_group=group_id).select_related('author')
     html = render_to_string('codoc_app/_prompt_info_fragment.html', {
-        'prompt': prompt, 'page_count': page_count, 'comments': comments,
+        'prompt': prompt, 'pages': pages, 'comments': comments,
     }, request=request)
     return HttpResponse(html)
 
