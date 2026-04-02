@@ -1,0 +1,177 @@
+{% extends "codoc_app/base.html" %}
+{% block title %}ePIC PRs{% endblock %}
+
+{% block extra_css %}
+.pr-section { margin-bottom: 2em; }
+.pr-repo { color: var(--accent); font-weight: 600; font-size: 13px; margin-top: 1em; margin-bottom: 0.3em; }
+.pr-repo a { color: var(--accent); }
+.pr-row { display: flex; align-items: baseline; gap: 8px; padding: 3px 0; font-size: 13px; }
+.pr-num { color: var(--grey); min-width: 50px; }
+.pr-repo-tag { color: var(--accent); font-size: 12px; min-width: 170px; flex-shrink: 0; }
+.pr-repo-tag a { color: var(--accent); }
+.pr-title a { color: var(--text); }
+.pr-title a:hover { color: var(--accent); }
+.pr-author { color: var(--grey); font-size: 12px; }
+.pr-date { color: var(--grey); font-size: 12px; min-width: 80px; }
+.pr-new { background: #14532d; color: #bbf7d0; font-size: 11px; padding: 1px 6px; border-radius: 3px; margin-left: 4px; }
+.pr-loading { color: var(--grey); font-style: italic; padding: 1em 0; }
+.pr-count { color: var(--grey); font-size: 13px; font-weight: normal; margin-left: 8px; }
+.view-toggle { display: inline-flex; gap: 0; margin-bottom: 1em; }
+.view-toggle button { font-size: 12px; padding: 4px 14px; border: 1px solid var(--border); background: var(--card-bg); color: var(--grey); cursor: pointer; font-family: inherit; }
+.view-toggle button:first-child { border-radius: 3px 0 0 3px; }
+.view-toggle button:last-child { border-radius: 0 3px 3px 0; border-left: none; }
+.view-toggle button.active { background: #3d7ea6; color: #e0e0e0; border-color: #3d7ea6; }
+{% endblock %}
+
+{% block page %}
+<div class="page">
+    <div class="main">
+        <h1>ePIC Pull Requests</h1>
+        <p class="subtitle">Across {{ repo_count }} <a href="https://eic-code-browser.sdcc.bnl.gov/lxr/source" target="_blank">LXR-indexed</a> repositories · <span id="cache-info" style="color:var(--grey)"></span></p>
+        <p class="subtitle" style="margin-top:-1em"><a href="https://github.com/eic" target="_blank">github.com/eic</a></p>
+
+        <div class="view-toggle">
+            <button id="btn-byrepo" class="active" onclick="setView('byrepo')">By Repository</button>
+            <button id="btn-chrono" onclick="setView('chrono')">Chronological</button>
+        </div>
+
+        <div class="pr-section" id="open-section">
+            <h2>Open PRs <span class="pr-count" id="open-count"></span></h2>
+            <div id="open-prs"><p class="pr-loading">Loading...</p></div>
+        </div>
+
+        <div class="pr-section" id="closed-section">
+            <h2>Closed PRs (last 30 days) <span class="pr-count" id="closed-count"></span></h2>
+            <div id="closed-prs"><p class="pr-loading">Loading...</p></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let _prData = null;
+let _currentView = localStorage.getItem('codoc-pr-view') || 'byrepo';
+
+function flattenPRs(repoMap) {
+    const all = [];
+    for (const [repo, prs] of Object.entries(repoMap || {})) {
+        for (const pr of prs) {
+            all.push({...pr, _repo: repo, _repoShort: repo.split('/').pop()});
+        }
+    }
+    all.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+    return all;
+}
+
+function renderByRepo(container, data, countEl) {
+    const repos = Object.keys(data).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+    if (repos.length === 0) {
+        container.innerHTML = '<p class="empty">None found.</p>';
+        countEl.textContent = '(0)';
+        return;
+    }
+    let total = 0, html = '';
+    for (const repo of repos) {
+        const prs = data[repo];
+        if (!prs || prs.length === 0) continue;
+        total += prs.length;
+        html += '<div class="pr-repo"><a href="https://github.com/' + repo + '/pulls" target="_blank">' + repo + '</a></div>';
+        prs.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+        for (const pr of prs) html += renderPrRow(pr, repo, false);
+    }
+    container.innerHTML = html;
+    countEl.textContent = '(' + total + ')';
+}
+
+function renderChrono(container, data, countEl) {
+    const all = flattenPRs(data);
+    if (all.length === 0) {
+        container.innerHTML = '<p class="empty">None found.</p>';
+        countEl.textContent = '(0)';
+        return;
+    }
+    let html = '';
+    for (const pr of all) html += renderPrRow(pr, pr._repo, true);
+    container.innerHTML = html;
+    countEl.textContent = '(' + all.length + ')';
+}
+
+function renderPrRow(pr, repo, showRepo) {
+    const author = pr.author ? pr.author.login : '?';
+    const updated = (pr.updatedAt || '').slice(0, 10);
+    const created = (pr.createdAt || '').slice(0, 10);
+    const weekAgo = new Date(Date.now() - 7*86400000).toISOString().slice(0, 10);
+    const badge = created >= weekAgo ? ' <span class="pr-new">new</span>' : '';
+    const repoShort = repo.split('/').pop();
+    let html = '<div class="pr-row">';
+    if (showRepo) html += '<span class="pr-repo-tag"><a href="https://github.com/' + repo + '/pulls" target="_blank">' + escHtml(repoShort) + '</a></span>';
+    html += '<span class="pr-num">#' + pr.number + '</span>';
+    html += '<span class="pr-title"><a href="' + pr.url + '" target="_blank">' + escHtml(pr.title) + '</a>' + badge + '</span>';
+    html += '<span class="pr-author">' + escHtml(author) + '</span>';
+    html += '<span class="pr-date">' + updated + '</span>';
+    html += '</div>';
+    return html;
+}
+
+function escHtml(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+}
+
+function renderAll() {
+    if (!_prData) return;
+    const renderFn = _currentView === 'chrono' ? renderChrono : renderByRepo;
+    renderFn(document.getElementById('open-prs'), _prData.open || {}, document.getElementById('open-count'));
+    renderFn(document.getElementById('closed-prs'), _prData.closed || {}, document.getElementById('closed-count'));
+}
+
+function setView(view) {
+    _currentView = view;
+    localStorage.setItem('codoc-pr-view', view);
+    document.getElementById('btn-byrepo').classList.toggle('active', view === 'byrepo');
+    document.getElementById('btn-chrono').classList.toggle('active', view === 'chrono');
+    renderAll();
+}
+// Apply saved view to toggle buttons on load
+document.getElementById('btn-byrepo').classList.toggle('active', _currentView === 'byrepo');
+document.getElementById('btn-chrono').classList.toggle('active', _currentView === 'chrono');
+
+function loadPRs() {
+    fetch('{% url "codoc:epic_prs_api" %}')
+        .then(r => r.json())
+        .then(data => {
+            if (data.status === 'refreshing') {
+                document.getElementById('open-prs').innerHTML = '<p class="pr-loading">First load — building cache across {{ repo_count }} repos. This takes a few minutes. Will auto-refresh.</p>';
+                document.getElementById('closed-prs').innerHTML = '';
+                document.getElementById('cache-info').textContent = 'Cache building...';
+                setTimeout(loadPRs, 15000);
+                return;
+            }
+            _prData = data;
+            renderAll();
+            if (data.generated) {
+                _generatedAt = new Date(data.generated);
+                updateCacheAge();
+            }
+        })
+        .catch(err => {
+            document.getElementById('open-prs').innerHTML = '<p class="empty">Error loading PRs: ' + err + '</p>';
+            document.getElementById('closed-prs').innerHTML = '';
+        });
+}
+var _generatedAt = null;
+function updateCacheAge() {
+    if (!_generatedAt) return;
+    var sec = Math.round((Date.now() - _generatedAt.getTime()) / 1000);
+    var ago;
+    if (sec < 60) ago = 'just now';
+    else if (sec < 3600) ago = Math.round(sec / 60) + ' min ago';
+    else ago = Math.round(sec / 3600 * 10) / 10 + ' hr ago';
+    document.getElementById('cache-info').textContent = 'refreshed ' + ago;
+}
+setInterval(updateCacheAge, 30000);
+loadPRs();
+</script>
+{% endblock %}

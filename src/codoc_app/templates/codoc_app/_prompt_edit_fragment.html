@@ -24,7 +24,13 @@
 </div>
 
 <script>
+var _promptCM = codocEditor(
+    document.querySelector('#prompt-edit-form textarea[name=content]'),
+    function() { savePrompt(); },
+    {minHeight: '200px', draftKey: 'codoc-draft-prompt-{{ prompt.group_id|default:"new" }}'}
+);
 function savePrompt() {
+    _promptCM.save();
     const form = document.getElementById('prompt-edit-form');
     const formData = new FormData(form);
     formData.set('action', 'save');
@@ -34,6 +40,7 @@ function savePrompt() {
         headers: {'X-Requested-With': 'XMLHttpRequest'},
     }).then(r => r.json()).then(data => {
         if (data.error) { alert(data.error); return; }
+        if (_promptCM._clearDraft) _promptCM._clearDraft();
         window.location.href = '{% url "codoc:prompts" %}';
     }).catch(err => alert('Save failed: ' + err));
 }

@@ -42,4 +42,8 @@ urlpatterns = [
     path('_api/job/<uuid:pk>/abort/', views.job_abort, name='job_abort'),
     path('_api/job/<uuid:pk>/rerun/', views.job_rerun, name='job_rerun'),
     path('_api/job/<uuid:pk>/delete/', views.job_delete, name='job_delete'),
+    path('_api/prompt/<uuid:group_id>/v/<int:version>/', views.prompt_version_api, name='prompt_version'),
+    path('_api/sysprompt/<uuid:group_id>/v/<int:version>/', views.sysprompt_version_api, name='sysprompt_version'),
+    path('prs/', views.epic_prs_view, name='epic_prs'),
+    path('_api/prs/', views.epic_prs_api, name='epic_prs_api'),
 ]

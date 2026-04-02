@@ -4,7 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}ePIC Code Documentation{% endblock %}</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/theme/material-darker.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/markdown/markdown.min.js"></script>
     <style>
+        .CodeMirror { background: var(--card-bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; font-size: 13px; line-height: 1.5; height: auto; min-height: 160px; }
+        .CodeMirror-focused { border-color: var(--accent); }
+        .CodeMirror-scroll { min-height: 160px; }
         :root {
             --bg: #141414;
             --text: #e0e0e0;
@@ -182,10 +189,10 @@
                 <a href="{% url 'codoc:sysprompts' %}">System Prompts</a>
                 <a href="{% url 'codoc:definitions' %}">Definitions</a>
                 {% if user.is_authenticated %}<a href="{% url 'codoc:logs' %}">Logs</a>{% endif %}
+                <a href="{% url 'codoc:epic_prs' %}">PRs</a>
                 <a href="{% url 'codoc:about' %}">About</a>
                 <span class="topbar-sep">|</span>
-                <a href="https://eicweb.phy.anl.gov/EIC/lxr/" target="_blank">LXR</a>
-                <a href="https://github.com/eic" target="_blank">GitHub/EIC</a>
+                <a href="https://eic-code-browser.sdcc.bnl.gov/lxr/source" target="_blank">LXR</a>
             </span>
         </div>
         <div class="topbar-right">
@@ -229,6 +236,106 @@
     setInterval(checkActive, 5000);
     checkActive();
 })();
+
+/**
+ * Upgrade a textarea to CodeMirror with standard shortcuts.
+ * Returns the CodeMirror instance.
+ * @param {HTMLTextAreaElement} textarea
+ * @param {Function} saveFn - called on Cmd-S
+ * @param {Object} opts - optional overrides
+ */
+function codocEditor(textarea, saveFn, opts) {
+    opts = opts || {};
+    function wrapSelection(cm, before, after) {
+        if (cm.somethingSelected()) {
+            cm.replaceSelection(before + cm.getSelection() + (after || before));
+        } else {
+            const pos = cm.getCursor();
+            cm.replaceRange(before + (after || before), pos);
+            cm.setCursor(pos.line, pos.ch + before.length);
+        }
+    }
+    const cm = CodeMirror.fromTextArea(textarea, {
+        mode: 'markdown',
+        theme: 'material-darker',
+        lineWrapping: true,
+        lineNumbers: false,
+        indentUnit: 2,
+        tabSize: 2,
+        indentWithTabs: false,
+        viewportMargin: Infinity,
+        extraKeys: {
+            'Cmd-S': function() { if (saveFn) saveFn(); },
+            'Ctrl-S': function() { if (saveFn) saveFn(); },
+            'Cmd-B': function(cm) { wrapSelection(cm, '**'); },
+            'Ctrl-B': function(cm) { wrapSelection(cm, '**'); },
+            'Cmd-I': function(cm) { wrapSelection(cm, '*'); },
+            'Ctrl-I': function(cm) { wrapSelection(cm, '*'); },
+            'Cmd-K': function(cm) {
+                const url = prompt('URL:');
+                if (url) {
+                    const sel = cm.getSelection() || 'link text';
+                    cm.replaceSelection('[' + sel + '](' + url + ')');
+                }
+            },
+            'Ctrl-K': function(cm) {
+                const url = prompt('URL:');
+                if (url) {
+                    const sel = cm.getSelection() || 'link text';
+                    cm.replaceSelection('[' + sel + '](' + url + ')');
+                }
+            },
+            'Esc': function() { /* let it propagate */ },
+        },
+    });
+    if (opts.minHeight) cm.getWrapperElement().querySelector('.CodeMirror-scroll').style.minHeight = opts.minHeight;
+    cm.refresh();
+
+    // localStorage draft backup
+    var draftKey = opts.draftKey || null;
+    if (draftKey) {
+        // Check for existing draft
+        try {
+            var saved = localStorage.getItem(draftKey);
+            if (saved) {
+                var draft = JSON.parse(saved);
+                var serverContent = textarea.value;
+                if (draft.content && draft.content !== serverContent) {
+                    if (confirm('Unsaved draft found from ' + new Date(draft.ts).toLocaleString() + '. Restore it?')) {
+                        cm.setValue(draft.content);
+                    } else {
+                        localStorage.removeItem(draftKey);
+                    }
+                }
+            }
+        } catch(e) {}
+
+        // Save draft on change (debounced 2s)
+        var _draftTimer = null;
+        cm.on('change', function() {
+            clearTimeout(_draftTimer);
+            _draftTimer = setTimeout(function() {
+                try {
+                    localStorage.setItem(draftKey, JSON.stringify({
+                        content: cm.getValue(), ts: Date.now()
+                    }));
+                } catch(e) {}
+            }, 2000);
+        });
+
+        // Clear draft on successful save
+        var origSave = saveFn;
+        saveFn = null; // detach — we wrap it
+        cm.setOption('extraKeys', Object.assign({}, cm.getOption('extraKeys'), {
+            'Cmd-S': function() { if (origSave) origSave(); localStorage.removeItem(draftKey); },
+            'Ctrl-S': function() { if (origSave) origSave(); localStorage.removeItem(draftKey); },
+        }));
+        cm._clearDraft = function() { localStorage.removeItem(draftKey); };
+    }
+
+    return cm;
+}
 </script>
+{% block extra_js %}{% endblock %}
 </body>
 </html>

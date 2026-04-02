@@ -34,7 +34,13 @@
 </div>
 
 <script>
+var _editorCM = codocEditor(
+    document.querySelector('#editor-form textarea[name=content]'),
+    function() { submitEditor('save'); },
+    {minHeight: '160px', draftKey: 'codoc-draft-editor-{{ prompt.group_id|default:"new" }}'}
+);
 function submitEditor(action) {
+    _editorCM.save(); // sync to textarea
     const form = document.getElementById('editor-form');
     const formData = new FormData(form);
     formData.set('action', action);
@@ -52,11 +58,10 @@ function submitEditor(action) {
             buttons.forEach(b => b.disabled = false);
             return;
         }
+        if (_editorCM._clearDraft) _editorCM._clearDraft();
         if (data.action === 'generate') {
-            // Redirect to queue to watch progress
             window.location.href = '{% url "codoc:queue" %}';
         } else {
-            // Refresh browse to show new prompt
             window.location.reload();
         }
     }).catch(err => {

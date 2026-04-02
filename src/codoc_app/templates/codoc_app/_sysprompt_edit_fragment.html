@@ -24,7 +24,13 @@
 </div>
 
 <script>
+var _spCM = codocEditor(
+    document.querySelector('#sp-edit-form textarea[name=content]'),
+    function() { saveSp('{{ sp.group_id|default:"" }}'); },
+    {minHeight: '400px', draftKey: 'codoc-draft-sp-{{ sp.group_id|default:"new" }}'}
+);
 function saveSp(groupId) {
+    _spCM.save();
     const form = document.getElementById('sp-edit-form');
     const formData = new FormData(form);
     const url = '{% url "codoc:sysprompt_save_api" %}';
@@ -34,7 +40,8 @@ function saveSp(groupId) {
         .then(r => r.json())
         .then(data => {
             if (data.error) { alert(data.error); return; }
-            window.location.href = '{% url "codoc:sysprompts" %}';
+            if (_spCM._clearDraft) _spCM._clearDraft();
+            window.location.href = '{% url "codoc:sysprompts" %}?id=' + (data.group_id || '');
         })
         .catch(err => alert('Save failed: ' + err));
 }

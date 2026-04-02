@@ -1,7 +1,11 @@
 """Code documentation views — the first corun-ai application."""
 
+import json
 import logging
+import subprocess
+import sys
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -23,14 +27,18 @@ logger = logging.getLogger(__name__)
 # ── Browse (two-panel home) ──────────────────────────────────────────────────
 
 def home(request):
-    """Two-panel browse: pages (documents) on left, detail on right."""
-    sections = Section.objects.filter(status='active')
+    """Two-panel browse: prompts + pages on left, detail on right."""
+    sections = Section.objects.filter(status='active').order_by('data__sort_order', 'name')
 
     for sec in sections:
+        prompts = list(sec.prompts.filter(
+            is_current=True,
+        ).exclude(status='rejected').order_by('-created_at'))
         pages = list(sec.pages.filter(
             is_current=True, status='published'
         ).order_by('-created_at'))
-        sec.browse_items = pages
+        sec.browse_prompts = prompts
+        sec.browse_pages = pages
 
     return render(request, 'codoc_app/home.html', {
         'sections': sections,
@@ -86,7 +94,7 @@ def page_fragment(request, group_id):
 
 def editor_fragment(request, group_id=None):
     """AJAX fragment: inline editor in right panel. group_id=None for new prompt."""
-    sections = Section.objects.filter(status='active')
+    sections = Section.objects.filter(status='active').order_by('data__sort_order', 'name')
     definitions = JobDefinition.objects.filter(status='active')
     prompt = None
     if group_id:
@@ -176,7 +184,7 @@ def generate_from_prompt(request, group_id):
 @login_required
 def prepare_prompt(request):
     """Standalone prepare prompt page."""
-    sections = Section.objects.filter(status='active')
+    sections = Section.objects.filter(status='active').order_by('data__sort_order', 'name')
     definitions = JobDefinition.objects.filter(status='active')
     from .generate import get_or_create_default_def
     job_def = get_or_create_default_def()
@@ -251,7 +259,7 @@ def prompt_edit_frag(request, group_id=None):
     prompt = None
     if group_id:
         prompt = Prompt.objects.filter(group_id=group_id, is_current=True).first()
-    sections = Section.objects.filter(status='active')
+    sections = Section.objects.filter(status='active').order_by('data__sort_order', 'name')
     definitions = JobDefinition.objects.filter(status='active')
     html = render_to_string('codoc_app/_prompt_edit_fragment.html', {
         'prompt': prompt, 'sections': sections, 'definitions': definitions,
@@ -282,6 +290,29 @@ def page_delete(request, group_id):
         return JsonResponse({'error': 'Not your page.'}, status=403)
     Page.objects.filter(group_id=group_id).delete()
     return JsonResponse({'ok': True})
+
+
+# ── Version API ───────────────────────────────────────────────────────────────
+
+def prompt_version_api(request, group_id, version):
+    """Return a specific prompt version's content as JSON."""
+    p = get_object_or_404(Prompt, group_id=group_id, version=version)
+    return JsonResponse({
+        'content': p.content, 'version': p.version,
+        'created_at': p.created_at.strftime('%b %-d %H:%M'),
+        'is_current': p.is_current,
+    })
+
+
+def sysprompt_version_api(request, group_id, version):
+    """Return a specific system prompt version's content as JSON."""
+    sp = get_object_or_404(SystemPrompt, group_id=group_id, version=version)
+    return JsonResponse({
+        'content': sp.content, 'name': sp.name, 'version': sp.version,
+        'created_at': sp.created_at.strftime('%b %-d %H:%M'),
+        'is_current': sp.is_current,
+        'description': (sp.data or {}).get('description', ''),
+    })
 
 
 # ── Detail pages (direct URL access) ────────────────────────────────────────
@@ -557,7 +588,7 @@ def definition_copy(request, pk):
 
 def sysprompts_view(request):
     """Two-panel system prompt management."""
-    sysprompts = SystemPrompt.objects.filter(is_current=True).order_by('name')
+    sysprompts = SystemPrompt.objects.filter(is_current=True).order_by('-modified_at')
     return render(request, 'codoc_app/sysprompts.html', {'sysprompts': sysprompts})
 
 
@@ -659,6 +690,118 @@ def about_edit(request):
         return redirect('codoc:about')
 
     return render(request, 'codoc_app/about_edit.html', {'content': content})
+
+
+# ── ePIC PRs ─────────────────────────────────────────────────────────────────
+
+# All repos indexed by the ePIC LXR code browser
+_EPIC_REPOS = [
+    "eic/acts", "eic/algorithms", "eic/containers", "eic/DD4hep",
+    "eic/DEMPgen", "eic/detector_benchmarks", "eic/drich-dev",
+    "eic/EDM4eic", "eic/edpm", "eic/eic-shell", "eic/eic-spack",
+    "eic/eic.github.io", "eic/EICrecon", "eic/epic", "eic/epic-capybara",
+    "eic/epic-data", "eic/epic-lfhcal-tbana", "eic/epic-prod",
+    "eic/estarlight", "eic/firebird", "eic/firehose", "eic/geant4",
+    "eic/HEPMC_Merger", "eic/image_browser", "eic/irt",
+    "JeffersonLab/JANA2", "eic/job_submission_condor",
+    "eic/job_submission_slurm", "eic/JPsiDataSet", "eic/LQGENEP",
+    "eic/npsim", "eic/pfRICH", "eic/phoenix-eic-event-display",
+    "eic/physics_benchmarks", "eic/run-cvmfs-osg-eic-shell",
+    "eic/simulation_campaign_datasets", "eic/simulation_campaign_hepmc3",
+    "eic/simulation_campaign_single", "eic/snippets",
+    "eic/trigger-gitlab-ci", "eic/tutorial-analysis",
+    "eic/tutorial-developing-benchmarks",
+    "eic/tutorial-geometry-development-using-dd4hep",
+    "eic/tutorial-jana2", "eic/tutorial-reconstruction-algorithms",
+    "eic/tutorial-setting-up-environment",
+    "eic/tutorial-simulations-using-ddsim-and-geant4", "eic/UpsilonGen",
+]
+
+
+_EPIC_PRS_CACHE_FILE = '/tmp/epic_prs_cache.json'
+
+
+def _refresh_epic_prs_cache():
+    """Build PR data and write to cache file. Run outside WSGI."""
+    closed_since = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
+    open_prs = {}
+    closed_prs = {}
+    for repo in _EPIC_REPOS:
+        for state, since, target in [
+            ("open", "2000-01-01", open_prs),
+            ("closed", closed_since, closed_prs),
+        ]:
+            cmd = [
+                "gh", "search", "prs",
+                f"--updated=>={since}",
+                f"--repo={repo}",
+                f"--state={state}",
+                "--json=title,url,number,author,updatedAt,createdAt",
+                "--limit=50",
+            ]
+            try:
+                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                if proc.returncode == 0 and proc.stdout.strip():
+                    prs = json.loads(proc.stdout)
+                    if prs:
+                        target[repo] = prs
+            except (subprocess.TimeoutExpired, json.JSONDecodeError):
+                continue
+
+    data = {
+        "open": open_prs,
+        "closed": closed_prs,
+        "generated": datetime.now(timezone.utc).isoformat(),
+    }
+    import tempfile, os
+    # Atomic write
+    fd, tmp = tempfile.mkstemp(dir='/tmp', suffix='.json')
+    try:
+        with os.fdopen(fd, 'w') as f:
+            json.dump(data, f)
+        os.replace(tmp, _EPIC_PRS_CACHE_FILE)
+    except Exception:
+        os.unlink(tmp)
+        raise
+    return data
+
+
+def epic_prs_api(request):
+    """Serve cached PR data. Trigger background refresh if stale."""
+    import os
+    data = None
+    try:
+        with open(_EPIC_PRS_CACHE_FILE) as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+
+    # If cache missing or older than 1 hour, trigger background refresh
+    stale = True
+    if data and data.get('generated'):
+        try:
+            gen = datetime.fromisoformat(data['generated'])
+            stale = (datetime.now(timezone.utc) - gen).total_seconds() > 3600
+        except ValueError:
+            pass
+
+    if stale:
+        # Fire-and-forget background refresh
+        subprocess.Popen(
+            [sys.executable, '-c',
+             'import django; import os; os.environ.setdefault("DJANGO_SETTINGS_MODULE", "corun_project.settings"); '
+             'django.setup(); from codoc_app.views import _refresh_epic_prs_cache; _refresh_epic_prs_cache()'],
+            cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+
+    if data:
+        return JsonResponse(data)
+    return JsonResponse({"open": {}, "closed": {}, "generated": None, "status": "refreshing"})
+
+
+def epic_prs_view(request):
+    return render(request, 'codoc_app/epic_prs.html', {'repo_count': len(_EPIC_REPOS)})
 
 
 # ── Account ──────────────────────────────────────────────────────────────────

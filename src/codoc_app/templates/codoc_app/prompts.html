@@ -31,6 +31,7 @@
     </div>
 </div>
 
+<form id="csrf-form" style="display:none">{% csrf_token %}</form>
 <script>
 function setHTML(c, h) { c.innerHTML = h; c.querySelectorAll('script').forEach(old => { const s = document.createElement('script'); s.textContent = old.textContent; old.replaceWith(s); }); }
 
@@ -39,18 +40,36 @@ function loadPromptView(gid) {
         .then(r => r.text()).then(h => setHTML(document.getElementById('prompt-detail-body'), h));
 }
 
-function loadPromptEditor(gid) {
+function loadGeneratePanel(gid) {
+    const url = '{% url "codoc:editor_version" "00000000-0000-0000-0000-000000000000" %}'.replace('00000000-0000-0000-0000-000000000000', gid);
+    fetch(url).then(r => r.text()).then(h => setHTML(document.getElementById('prompt-detail-body'), h));
+}
+
+function loadPromptEditor(gid, revertContent) {
     const url = gid
         ? '{% url "codoc:prompt_edit_frag" "00000000-0000-0000-0000-000000000000" %}'.replace('00000000-0000-0000-0000-000000000000', gid)
         : '{% url "codoc:prompt_new_frag" %}';
-    fetch(url).then(r => r.text()).then(h => setHTML(document.getElementById('prompt-detail-body'), h));
+    fetch(url).then(r => r.text()).then(h => {
+        setHTML(document.getElementById('prompt-detail-body'), h);
+        if (revertContent) {
+            // Wait a tick for CodeMirror to initialize
+            setTimeout(function() {
+                if (typeof _promptCM !== 'undefined') _promptCM.setValue(revertContent);
+                else if (typeof _editorCM !== 'undefined') _editorCM.setValue(revertContent);
+            }, 100);
+        }
+    });
 }
 
 const pItems = document.querySelectorAll('.browse-item');
 let pIdx = -1;
-function selectPItem(idx) {
+function selectPItem(idx, skipHistory) {
     pItems.forEach(i => i.classList.remove('selected'));
-    if (idx >= 0 && idx < pItems.length) { pIdx = idx; pItems[idx].classList.add('selected'); pItems[idx].scrollIntoView({block:'nearest'}); loadPromptView(pItems[idx].dataset.id); }
+    if (idx >= 0 && idx < pItems.length) {
+        pIdx = idx; pItems[idx].classList.add('selected'); pItems[idx].scrollIntoView({block:'nearest'});
+        loadPromptView(pItems[idx].dataset.id);
+        if (!skipHistory) history.replaceState(null, '', '?id=' + pItems[idx].dataset.id);
+    }
 }
 document.getElementById('prompt-list').addEventListener('keydown', e => {
     if (e.key === 'ArrowDown') { e.preventDefault(); selectPItem(Math.min(pIdx+1, pItems.length-1)); }
@@ -58,11 +77,19 @@ document.getElementById('prompt-list').addEventListener('keydown', e => {
 });
 pItems.forEach((item, idx) => item.addEventListener('click', () => selectPItem(idx)));
 
-document.getElementById('prompt-search').addEventListener('input', function() {
+var promptSearch = document.getElementById('prompt-search');
+promptSearch.addEventListener('input', function() {
     const q = this.value.toLowerCase();
     pItems.forEach(item => { item.style.display = item.querySelector('.browse-item-title').textContent.toLowerCase().includes(q) ? '' : 'none'; });
 });
+promptSearch.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') { this.value = ''; this.dispatchEvent(new Event('input')); }
+});
 
-if (pItems.length > 0) selectPItem(0);
+var params = new URLSearchParams(window.location.search);
+var selId = params.get('id') || params.get('focus');
+var startIdx = 0;
+if (selId) { pItems.forEach(function(item, idx) { if (item.dataset.id === selId) startIdx = idx; }); }
+if (pItems.length > 0) selectPItem(startIdx, true);
 </script>
 {% endblock %}

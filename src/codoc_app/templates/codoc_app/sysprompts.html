@@ -40,24 +40,40 @@ function loadSpDetail(gid) {
         .then(r => r.text()).then(h => setHTML(document.getElementById('sp-detail-body'), h));
 }
 
-function loadSpEditor(gid) {
+function loadSpEditor(gid, revertContent, revertName, revertDesc) {
     const url = gid
         ? '{% url "codoc:sysprompt_edit_frag" "00000000-0000-0000-0000-000000000000" %}'.replace('00000000-0000-0000-0000-000000000000', gid)
         : '{% url "codoc:sysprompt_new_frag" %}';
-    fetch(url).then(r => r.text()).then(h => setHTML(document.getElementById('sp-detail-body'), h));
+    fetch(url).then(r => r.text()).then(h => {
+        setHTML(document.getElementById('sp-detail-body'), h);
+        setTimeout(function() {
+            if (revertContent && typeof _spCM !== 'undefined') _spCM.setValue(revertContent);
+            if (revertName) { const inp = document.querySelector('#sp-edit-form input[name=name]'); if (inp) inp.value = revertName; }
+            if (revertDesc) { const inp = document.querySelector('#sp-edit-form input[name=description]'); if (inp) inp.value = revertDesc; }
+        }, 100);
+    });
 }
 
 const spItems = document.querySelectorAll('.browse-item');
 let spIdx = -1;
-function selectSpItem(idx) {
+function selectSpItem(idx, skipHistory) {
     spItems.forEach(i => i.classList.remove('selected'));
-    if (idx >= 0 && idx < spItems.length) { spIdx = idx; spItems[idx].classList.add('selected'); spItems[idx].scrollIntoView({block:'nearest'}); loadSpDetail(spItems[idx].dataset.id); }
+    if (idx >= 0 && idx < spItems.length) {
+        spIdx = idx; spItems[idx].classList.add('selected'); spItems[idx].scrollIntoView({block:'nearest'});
+        loadSpDetail(spItems[idx].dataset.id);
+        if (!skipHistory) history.replaceState(null, '', '?id=' + spItems[idx].dataset.id);
+    }
 }
 document.getElementById('sp-list').addEventListener('keydown', e => {
     if (e.key === 'ArrowDown') { e.preventDefault(); selectSpItem(Math.min(spIdx+1, spItems.length-1)); }
     if (e.key === 'ArrowUp') { e.preventDefault(); selectSpItem(Math.max(spIdx-1, 0)); }
 });
 spItems.forEach((item, idx) => item.addEventListener('click', () => selectSpItem(idx)));
-if (spItems.length > 0) selectSpItem(0);
+// Select focused item from URL param, or first
+var params = new URLSearchParams(window.location.search);
+var selId = params.get('id') || params.get('focus');
+var startIdx = 0;
+if (selId) { spItems.forEach(function(item, idx) { if (item.dataset.id === selId) startIdx = idx; }); }
+if (spItems.length > 0) selectSpItem(startIdx, true);
 </script>
 {% endblock %}

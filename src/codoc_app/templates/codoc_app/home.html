@@ -8,19 +8,28 @@
     <div class="browse-panel">
         <div class="browse-header">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-                <span style="font-weight:600;font-size:13px">Prompts & Pages</span>
+                <span style="font-weight:600;font-size:13px">Documents</span>
+                {% if user.is_authenticated %}<button class="btn" onclick="loadEditor()">New Prompt</button>{% endif %}
             </div>
             <input type="text" class="browse-search" id="browse-search" placeholder="Search...">
         </div>
         <div class="browse-list" id="browse-list" tabindex="0">
             {% for sec in sections %}
+            {% if sec.browse_prompts or sec.browse_pages %}
             <div class="browse-section">{{ sec.title|default:sec.name }}</div>
-                {% for item in sec.browse_items %}
-                <div class="browse-item" data-type="page" data-id="{{ item.group_id }}" tabindex="-1">
-                    <div class="browse-item-title">{{ item.data.prompt_content|default:item.content|truncatewords:12 }}</div>
-                    <div class="browse-item-meta">{{ item.data.generation_model|default:"" }} · {{ item.data.definition_name|default:"" }} · {{ item.created_at|date:"M j H:i" }}</div>
+                {% for p in sec.browse_prompts %}
+                <div class="browse-item" data-type="prompt" data-id="{{ p.group_id }}" tabindex="-1">
+                    <div class="browse-item-title">{{ p.content|truncatewords:12 }}</div>
+                    <div class="browse-item-meta">prompt · v{{ p.version }} · {{ p.status }} · {{ p.created_at|date:"M j H:i" }}</div>
                 </div>
                 {% endfor %}
+                {% for item in sec.browse_pages %}
+                <div class="browse-item" data-type="page" data-id="{{ item.group_id }}" tabindex="-1">
+                    <div class="browse-item-title">{{ item.data.prompt_content|default:item.content|truncatewords:12 }}</div>
+                    <div class="browse-item-meta">page · {{ item.data.generation_model|default:"" }} · {{ item.created_at|date:"M j H:i" }}</div>
+                </div>
+                {% endfor %}
+            {% endif %}
             {% endfor %}
         </div>
     </div>
@@ -51,13 +60,16 @@ function setHTML(container, html) {
     });
 }
 
-function selectItem(idx) {
+function selectItem(idx, skipHistory) {
     items.forEach(i => i.classList.remove('selected'));
     if (idx >= 0 && idx < items.length) {
         currentIdx = idx;
         items[idx].classList.add('selected');
         items[idx].scrollIntoView({ block: 'nearest' });
         loadDetail(items[idx]);
+        if (!skipHistory) {
+            history.replaceState(null, '', '?id=' + items[idx].dataset.id);
+        }
     }
 }
 
@@ -102,8 +114,15 @@ searchInput.addEventListener('input', () => {
         item.style.display = text.includes(q) ? '' : 'none';
     });
 });
+searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { searchInput.value = ''; searchInput.dispatchEvent(new Event('input')); }
+});
 
-// Auto-select first item
-if (items.length > 0) selectItem(0);
+// Restore selection from URL or select first
+var params = new URLSearchParams(window.location.search);
+var selId = params.get('id');
+var startIdx = 0;
+if (selId) { items.forEach(function(el, idx) { if (el.dataset.id === selId) startIdx = idx; }); }
+if (items.length > 0) selectItem(startIdx, true);
 </script>
 {% endblock %}

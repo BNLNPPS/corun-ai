@@ -6,6 +6,7 @@
         </div>
         {% if user.is_authenticated %}
         <div style="display:flex;gap:8px">
+            <button class="btn" onclick="loadGeneratePanel('{{ prompt.group_id }}')">Generate</button>
             <button class="btn" onclick="loadPromptEditor('{{ prompt.group_id }}')">Edit</button>
             {% if user == prompt.submitted_by %}
             <button class="btn" style="background:#7f1d1d" onclick="deletePrompt('{{ prompt.group_id }}')">Delete</button>
@@ -14,19 +15,81 @@
         {% endif %}
     </div>
 
-    <div class="prompt-content">{{ prompt.content }}</div>
+    <div class="prompt-content" id="prompt-content-display">{{ prompt.content }}</div>
 
     {% if versions|length > 1 %}
     <h3 style="font-size:13px;margin-top:16px;margin-bottom:8px;color:var(--grey)">Version History</h3>
+    <div id="version-list">
     {% for v in versions %}
-    <div style="font-size:12px;color:var(--grey);margin-bottom:4px{% if v.is_current %};color:var(--text){% endif %}">
-        v{{ v.version }} · {{ v.created_at|date:"M j H:i" }}{% if v.is_current %} · current{% endif %}
-    </div>
+    <a href="#" onclick="event.preventDefault();viewPromptVersion('{{ prompt.group_id }}', {{ v.version }}, {{ v.is_current|yesno:'true,false' }})"
+       style="display:block;font-size:12px;margin-bottom:4px;text-decoration:none;{% if v.is_current %}color:var(--text){% else %}color:var(--grey){% endif %}">
+        <span style="color:var(--accent);font-weight:500">v{{ v.version }}</span>
+        · {{ v.created_at|date:"M j H:i" }}{% if v.is_current %} · current{% endif %}
+    </a>
     {% endfor %}
+    </div>
+    <div id="version-preview" style="display:none;margin-top:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+            <span id="version-preview-label" style="font-size:12px;color:var(--accent)"></span>
+            <a href="#" onclick="event.preventDefault();hideVersionPreview()" style="font-size:12px;color:var(--grey)">close</a>
+        </div>
+        <div id="version-preview-content" class="prompt-content" style="border-color:var(--accent);opacity:0.85"></div>
+        {% if user.is_authenticated %}
+        <div id="version-save-bar" style="margin-top:8px;padding:8px 10px;background:var(--code-bg);border:1px solid var(--accent);border-radius:4px;font-size:12px;display:flex;align-items:center;justify-content:space-between">
+            <span style="color:var(--accent)">Saving will supersede the current version.</span>
+            <button class="btn" id="version-save-btn" style="font-size:12px">Save as current</button>
+        </div>
+        {% endif %}
+    </div>
     {% endif %}
 </div>
 
 <script>
+var _viewedVersion = null;
+function viewPromptVersion(groupId, version, isCurrent) {
+    if (isCurrent) { hideVersionPreview(); return; }
+    fetch('{% url "codoc:prompt_version" "00000000-0000-0000-0000-000000000000" 0 %}'
+        .replace('00000000-0000-0000-0000-000000000000', groupId).replace('/0/', '/' + version + '/'))
+        .then(r => r.json())
+        .then(data => {
+            _viewedVersion = {groupId: groupId, content: data.content, version: data.version};
+            document.getElementById('version-preview-label').textContent = 'v' + data.version + ' · ' + data.created_at;
+            document.getElementById('version-preview-content').textContent = data.content;
+            document.getElementById('version-preview').style.display = 'block';
+            var btn = document.getElementById('version-save-btn');
+            if (btn) btn.onclick = function() { saveVersionAsCurrent(groupId, data.content); };
+        });
+}
+function hideVersionPreview() {
+    document.getElementById('version-preview').style.display = 'none';
+    _viewedVersion = null;
+}
+function saveVersionAsCurrent(groupId, content) {
+    var formData = new FormData();
+    formData.set('action', 'save');
+    formData.set('content', content);
+    formData.set('source_group_id', groupId);
+    // Need section — get from current prompt
+    formData.set('section', '{{ prompt.section_id }}');
+    fetch('{% url "codoc:save_prompt_api" %}', {
+        method: 'POST', body: formData,
+        headers: {'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || '', 'X-Requested-With': 'XMLHttpRequest'},
+    }).then(r => r.json()).then(data => {
+        if (data.error) { alert(data.error); return; }
+        window.location.href = '{% url "codoc:prompts" %}?id=' + groupId;
+    }).catch(err => alert('Save failed: ' + err));
+}
+function generateFromPrompt(groupId, btn) {
+    btn.disabled = true;
+    btn.textContent = 'Queued...';
+    fetch('{% url "codoc:generate_prompt" "00000000-0000-0000-0000-000000000000" %}'.replace('00000000-0000-0000-0000-000000000000', groupId), {
+        method: 'POST',
+        headers: {'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || '', 'X-Requested-With': 'XMLHttpRequest'},
+    }).then(r => r.json()).then(data => {
+        if (data.ok) window.location.href = '{% url "codoc:queue" %}';
+        else { btn.disabled = false; btn.textContent = 'Generate'; alert(data.error || 'Generate failed'); }
+    }).catch(err => { btn.disabled = false; btn.textContent = 'Generate'; alert('Generate failed: ' + err); });
+}
 function deletePrompt(gid) {
     if (!confirm('Delete this prompt?')) return;
     fetch('{% url "codoc:prompt_delete" "00000000-0000-0000-0000-000000000000" %}'.replace('00000000-0000-0000-0000-000000000000', gid), {
