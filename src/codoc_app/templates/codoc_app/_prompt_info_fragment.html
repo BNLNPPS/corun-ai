@@ -32,7 +32,7 @@
 
     <!-- Comments / Assessment -->
     <div style="margin-top:24px;border-top:1px solid var(--border);padding-top:16px">
-        <h3 style="font-size:13px;color:var(--accent);margin-bottom:12px">Assessment & Discussion ({{ comments|length }})</h3>
+        <h3 style="font-size:13px;color:var(--accent);margin-bottom:12px">Assessment & Discussion ({{ comments|length }}{% if page_comments %} + {{ page_comments|length }} on pages{% endif %})</h3>
 
         {% if user.is_authenticated %}
         <form id="comment-form" onsubmit="return false;" style="margin-bottom:16px">
@@ -62,6 +62,23 @@
             <p class="empty">No comments yet.</p>
         {% endfor %}
         </div>
+
+        {% if page_comments %}
+        <h4 style="font-size:13px;color:var(--accent);margin-top:16px;margin-bottom:8px">Comments on generated pages</h4>
+        {% for pg, pg_comments in page_comments_grouped %}
+        <div style="margin-bottom:12px">
+            <a href="#" onclick="event.preventDefault();selectPageInTree('{{ pg.group_id }}')" style="font-size:13px;color:#90caf9">{{ pg.data.definition_name|default:pg.data.generation_model|default:"page" }} · {{ pg.created_at|date:"M j H:i" }}</a>
+            {% for c in pg_comments %}
+            <div style="margin-top:6px;margin-left:12px;padding:8px 10px;background:var(--code-bg);border-radius:4px">
+                <div style="font-size:12px;color:var(--grey);margin-bottom:4px">
+                    {{ c.author.username }} · {{ c.created_at|date:"M j H:i" }}
+                </div>
+                <div style="font-size:13px;white-space:pre-wrap">{{ c.content }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endfor %}
+        {% endif %}
     </div>
 </div>
 

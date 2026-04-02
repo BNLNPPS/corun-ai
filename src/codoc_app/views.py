@@ -36,18 +36,27 @@ def home(request):
             is_current=True,
         ).exclude(status='rejected').order_by('-created_at'))
 
-        # Comment counts per prompt group
+        # Comment counts per prompt group (prompt-level only)
         from django.db.models import Count
         comment_counts = dict(
             Comment.objects.filter(
-                prompt_group__in=[p.group_id for p in current_prompts]
+                prompt_group__in=[p.group_id for p in current_prompts],
+                page__isnull=True,
             ).values_list('prompt_group').annotate(n=Count('id')).values_list('prompt_group', 'n')
         )
 
         # For each prompt group, get all versions + their pages
         browse_items = []
+        # Also count page-level comments for each prompt group
+        page_comment_by_group = dict(
+            Comment.objects.filter(
+                page__prompt__group_id__in=[p.group_id for p in current_prompts],
+                page__isnull=False,
+            ).values_list('page__prompt__group_id').annotate(n=Count('id')).values_list('page__prompt__group_id', 'n')
+        ) if current_prompts else {}
+
         for cp in current_prompts:
-            cp.comment_count = comment_counts.get(cp.group_id, 0)
+            cp.comment_count = comment_counts.get(cp.group_id, 0) + page_comment_by_group.get(cp.group_id, 0)
             all_pages = list(Page.objects.filter(
                 prompt__group_id=cp.group_id,
                 is_current=True, status='published',
@@ -71,6 +80,20 @@ def home(request):
                         pv.child_pages = pages_by_content[pv.content]
                         browse_items.append(pv)
                         seen_content.add(pv.content)
+
+        # Page comment counts
+        all_page_ids = []
+        for item in browse_items:
+            all_page_ids.extend(p.id for p in getattr(item, 'child_pages', []))
+        if all_page_ids:
+            page_comment_counts = dict(
+                Comment.objects.filter(
+                    page_id__in=all_page_ids,
+                ).values_list('page_id').annotate(n=Count('id')).values_list('page_id', 'n')
+            )
+            for item in browse_items:
+                for pg in getattr(item, 'child_pages', []):
+                    pg.comment_count = page_comment_counts.get(pg.id, 0)
 
         # Orphaned pages (no prompt) — show as standalone items
         orphan_pages = list(Page.objects.filter(
@@ -128,9 +151,25 @@ def prompt_info_fragment(request, group_id):
         status__in=['queued', 'running'],
     ).select_related('definition').order_by('-created_at'))
 
-    comments = Comment.objects.filter(prompt_group=group_id).select_related('author')
+    comments = Comment.objects.filter(prompt_group=group_id, page__isnull=True).select_related('author')
+    # Comments on pages belonging to this prompt, grouped by page
+    page_ids = [p.id for p in pages]
+    page_comments_raw = list(Comment.objects.filter(
+        page_id__in=page_ids
+    ).select_related('author', 'page').order_by('-created_at')) if page_ids else []
+    # Group by page, preserving page order
+    from collections import OrderedDict
+    pc_by_page = OrderedDict()
+    for c in page_comments_raw:
+        pc_by_page.setdefault(c.page_id, []).append(c)
+    page_comments_grouped = []
+    for pg in pages:
+        if pg.id in pc_by_page:
+            page_comments_grouped.append((pg, pc_by_page[pg.id]))
     html = render_to_string('codoc_app/_prompt_info_fragment.html', {
-        'prompt': prompt, 'pages': pages, 'active_jobs': active_jobs, 'comments': comments,
+        'prompt': prompt, 'pages': pages, 'active_jobs': active_jobs,
+        'comments': comments, 'page_comments': page_comments_raw,
+        'page_comments_grouped': page_comments_grouped,
     }, request=request)
     return HttpResponse(html)
 
@@ -167,8 +206,9 @@ def page_fragment(request, group_id):
     if not job_def:
         job = Job.objects.filter(prompt=page.prompt).order_by('-created_at').first()
         job_def = job.definition if job else None
+    comments = Comment.objects.filter(page=page).select_related('author')
     html = render_to_string('codoc_app/_page_fragment.html', {
-        'page': page, 'job_def': job_def,
+        'page': page, 'job_def': job_def, 'comments': comments,
     }, request=request)
     return HttpResponse(html)
 
@@ -554,16 +594,20 @@ def job_delete(request, pk):
 @require_POST
 @login_required
 def comment_post(request):
-    """Post a comment on a prompt group."""
+    """Post a comment on a prompt group or a specific page."""
     content = request.POST.get('content', '').strip()
     prompt_group = request.POST.get('prompt_group', '').strip()
-    if not content or not prompt_group:
-        return JsonResponse({'error': 'Content and prompt_group required.'}, status=400)
-    Comment.objects.create(
-        prompt_group=prompt_group,
-        author=request.user,
-        content=content,
-    )
+    page_id = request.POST.get('page_id', '').strip()
+    if not content:
+        return JsonResponse({'error': 'Content required.'}, status=400)
+    if not prompt_group and not page_id:
+        return JsonResponse({'error': 'prompt_group or page_id required.'}, status=400)
+    kwargs = {'author': request.user, 'content': content}
+    if page_id:
+        kwargs['page'] = get_object_or_404(Page, id=page_id)
+    if prompt_group:
+        kwargs['prompt_group'] = prompt_group
+    Comment.objects.create(**kwargs)
     return JsonResponse({'ok': True})
 
 
