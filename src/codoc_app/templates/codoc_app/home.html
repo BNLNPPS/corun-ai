@@ -9,27 +9,43 @@
         <div class="browse-header">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
                 <span style="font-weight:600;font-size:13px">Documents</span>
-                {% if user.is_authenticated %}<button class="btn" onclick="loadEditor()">New Prompt</button>{% endif %}
+                <div style="display:flex;gap:4px">
+                    <button class="btn" style="font-size:11px;padding:2px 8px" onclick="toggleAll(true)">Open All</button>
+                    <button class="btn" style="font-size:11px;padding:2px 8px" onclick="toggleAll(false)">Close All</button>
+                    {% if user.is_authenticated %}<button class="btn" onclick="loadEditor()">New Prompt</button>{% endif %}
+                </div>
             </div>
             <input type="text" class="browse-search" id="browse-search" placeholder="Search...">
         </div>
         <div class="browse-list" id="browse-list" tabindex="0">
             {% for sec in sections %}
-            {% if sec.browse_prompts or sec.browse_pages %}
-            <div class="browse-section">{{ sec.title|default:sec.name }}</div>
-                {% for p in sec.browse_prompts %}
-                <div class="browse-item" data-type="prompt" data-id="{{ p.group_id }}" tabindex="-1">
-                    <div class="browse-item-title">{{ p.content|truncatewords:12 }}</div>
-                    <div class="browse-item-meta">prompt · v{{ p.version }} · {{ p.status }} · {{ p.created_at|date:"M j H:i" }}</div>
+            <div class="browse-section" data-section="{{ sec.name }}"><span class="tree-toggle" data-target="sec-{{ sec.name }}" onclick="event.stopPropagation();toggleTree(this)" style="margin-right:4px">&#9654;</span>{{ sec.title|default:sec.name }}</div>
+            <div class="tree-children" id="sec-{{ sec.name }}" style="display:none">
+                {% for p in sec.browse_items %}
+                <div class="browse-item" data-type="prompt" data-id="{{ p.group_id }}" data-vid="{{ p.id }}" tabindex="-1" style="display:flex;gap:0;align-items:flex-start">
+                    {% if p.child_pages %}<span class="tree-toggle" data-target="pages-{{ p.id }}" onclick="event.stopPropagation();toggleTree(this)" style="margin-top:2px">&#9654;</span>{% endif %}
+                    <div style="flex:1;min-width:0{% if not p.child_pages %};padding-left:14px{% endif %}">
+                        <div class="browse-item-title">{{ p.content }}</div>
+                        <div class="browse-item-meta">v{{ p.version }}{% if p.is_current %} · current{% endif %} · {{ p.created_at|date:"M j H:i" }}</div>
+                    </div>
+                </div>
+                {% if p.child_pages %}
+                <div class="tree-children" id="pages-{{ p.id }}" style="display:none">
+                    {% for pg in p.child_pages %}
+                    <div class="browse-item browse-item-child" data-type="page" data-id="{{ pg.group_id }}" tabindex="-1">
+                        <div class="browse-item-title">{{ pg.data.definition_name|default:pg.data.generation_model|default:"page" }} · {{ pg.created_at|date:"M j H:i" }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                {% endfor %}
+                {% for pg in sec.orphan_pages %}
+                <div class="browse-item" data-type="page" data-id="{{ pg.group_id }}" tabindex="-1">
+                    <div class="browse-item-title">{{ pg.data.prompt_content|default:pg.content|truncatewords:12 }}</div>
+                    <div class="browse-item-meta">{{ pg.data.generation_model|default:"" }} · {{ pg.created_at|date:"M j H:i" }}</div>
                 </div>
                 {% endfor %}
-                {% for item in sec.browse_pages %}
-                <div class="browse-item" data-type="page" data-id="{{ item.group_id }}" tabindex="-1">
-                    <div class="browse-item-title">{{ item.data.prompt_content|default:item.content|truncatewords:12 }}</div>
-                    <div class="browse-item-meta">page · {{ item.data.generation_model|default:"" }} · {{ item.created_at|date:"M j H:i" }}</div>
-                </div>
-                {% endfor %}
-            {% endif %}
+            </div>
             {% endfor %}
         </div>
     </div>
@@ -45,6 +61,34 @@
 </div>
 
 <script>
+var _treeState = JSON.parse(localStorage.getItem('codoc-tree-state') || '{}');
+
+function _saveTreeState() {
+    var state = {};
+    document.querySelectorAll('.tree-children').forEach(function(el) {
+        state[el.id] = el.style.display !== 'none';
+    });
+    localStorage.setItem('codoc-tree-state', JSON.stringify(state));
+}
+
+function toggleTree(el) {
+    var target = document.getElementById(el.dataset.target);
+    if (!target) return;
+    var open = target.style.display !== 'none';
+    target.style.display = open ? 'none' : '';
+    el.classList.toggle('open', !open);
+    _saveTreeState();
+}
+
+// Restore tree state from localStorage
+document.querySelectorAll('.tree-children').forEach(function(el) {
+    if (_treeState[el.id]) {
+        el.style.display = '';
+        var toggle = document.querySelector('[data-target="' + el.id + '"]');
+        if (toggle) toggle.classList.add('open');
+    }
+});
+
 const items = document.querySelectorAll('.browse-item');
 const detailBody = document.getElementById('detail-body');
 const browseList = document.getElementById('browse-list');
@@ -68,7 +112,10 @@ function selectItem(idx, skipHistory) {
         items[idx].scrollIntoView({ block: 'nearest' });
         loadDetail(items[idx]);
         if (!skipHistory) {
-            history.replaceState(null, '', '?id=' + items[idx].dataset.id);
+            var el = items[idx];
+            var qs = '?t=' + el.dataset.type + '&id=' + el.dataset.id;
+            if (el.dataset.vid) qs += '&vid=' + el.dataset.vid;
+            history.replaceState(null, '', qs);
         }
     }
 }
@@ -76,10 +123,21 @@ function selectItem(idx, skipHistory) {
 function loadDetail(el) {
     const type = el.dataset.type;
     const id = el.dataset.id;
-    const url = type === 'page'
-        ? '{% url "codoc:page_fragment" "00000000-0000-0000-0000-000000000000" %}'.replace('00000000-0000-0000-0000-000000000000', id)
-        : '{% url "codoc:prompt_fragment" "00000000-0000-0000-0000-000000000000" %}'.replace('00000000-0000-0000-0000-000000000000', id);
+    var url;
+    if (type === 'page') {
+        url = '{% url "codoc:page_fragment" "00000000-0000-0000-0000-000000000000" %}'.replace('00000000-0000-0000-0000-000000000000', id);
+    } else {
+        url = '{% url "codoc:prompt_info_fragment" "00000000-0000-0000-0000-000000000000" %}'.replace('00000000-0000-0000-0000-000000000000', id);
+        var vid = el.dataset.vid;
+        if (vid) url += '?vid=' + vid;
+    }
     fetch(url).then(r => r.text()).then(html => { setHTML(detailBody, html); });
+}
+
+function toggleAll(open) {
+    document.querySelectorAll('.tree-children').forEach(function(el) { el.style.display = open ? '' : 'none'; });
+    document.querySelectorAll('.tree-toggle').forEach(function(el) { el.classList.toggle('open', open); });
+    _saveTreeState();
 }
 
 function loadEditor(groupId) {
@@ -102,9 +160,45 @@ items.forEach((item, idx) => {
     item.addEventListener('click', () => selectItem(idx));
 });
 
+function nextVisible(from, dir) {
+    var i = from + dir;
+    while (i >= 0 && i < items.length) {
+        if (items[i].offsetParent !== null) return i;
+        i += dir;
+    }
+    return from;
+}
 browseList.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowDown') { e.preventDefault(); selectItem(Math.min(currentIdx + 1, items.length - 1)); }
-    if (e.key === 'ArrowUp') { e.preventDefault(); selectItem(Math.max(currentIdx - 1, 0)); }
+    if (e.key === 'ArrowDown') { e.preventDefault(); selectItem(nextVisible(currentIdx, 1)); }
+    if (e.key === 'ArrowUp') { e.preventDefault(); selectItem(nextVisible(currentIdx, -1)); }
+    if (e.key === 'ArrowRight' && currentIdx >= 0) {
+        e.preventDefault();
+        var el = items[currentIdx];
+        var toggle = el.querySelector('.tree-toggle');
+        if (toggle && !toggle.classList.contains('open')) {
+            toggleTree(toggle);
+        } else {
+            // Already open or no children — move to first child
+            selectItem(nextVisible(currentIdx, 1));
+        }
+    }
+    if (e.key === 'ArrowLeft' && currentIdx >= 0) {
+        e.preventDefault();
+        var el = items[currentIdx];
+        var parent = el.closest('.tree-children');
+        if (parent) {
+            // In a child — go to parent prompt
+            var toggle = document.querySelector('[data-target="' + parent.id + '"]');
+            if (toggle) {
+                var parentItem = toggle.closest('.browse-item');
+                items.forEach(function(it, idx) { if (it === parentItem) selectItem(idx); });
+            }
+        } else {
+            // On a prompt — collapse it
+            var toggle = el.querySelector('.tree-toggle');
+            if (toggle && toggle.classList.contains('open')) toggleTree(toggle);
+        }
+    }
 });
 
 searchInput.addEventListener('input', () => {
@@ -121,8 +215,25 @@ searchInput.addEventListener('keydown', (e) => {
 // Restore selection from URL or select first
 var params = new URLSearchParams(window.location.search);
 var selId = params.get('id');
+var selVid = params.get('vid');
 var startIdx = 0;
-if (selId) { items.forEach(function(el, idx) { if (el.dataset.id === selId) startIdx = idx; }); }
+if (selId) {
+    items.forEach(function(el, idx) {
+        var match = false;
+        if (selVid && el.dataset.vid === selVid) match = true;
+        else if (el.dataset.id === selId && !selVid) match = true;
+        if (match) {
+            startIdx = idx;
+            // If it's a child page, expand its parent tree
+            var parent = el.closest('.tree-children');
+            if (parent) {
+                parent.style.display = '';
+                var toggle = document.querySelector('[data-target="' + parent.id + '"]');
+                if (toggle) toggle.classList.add('open');
+            }
+        }
+    });
+}
 if (items.length > 0) selectItem(startIdx, true);
 </script>
 {% endblock %}

@@ -71,7 +71,7 @@ function renderQueue(data) {
                 result = '<a href="' + url + '">View page</a>';
             }
             if (j.error) {
-                result += '<span style="color:#fecaca;font-size:12px">' + truncate(j.error, 80) + '</span>';
+                result += '<span style="color:#c44;font-size:12px">' + truncate(j.error, 80) + '</span>';
             }
             let timing = '';
             if (j.timing) {
@@ -83,7 +83,7 @@ function renderQueue(data) {
                 '</span></td><td>' + j.created + timing + '</td><td>' + result +
                 '</td><td>' +
                 '<button class="btn" style="background:#14532d;font-size:11px;padding:2px 8px;margin-right:16px" onclick="rerunJob(\'' + j.id + '\')">Rerun</button>' +
-                '<span style="color:#fecaca;cursor:pointer;font-size:16px" onclick="deleteJob(\'' + j.id + '\')" title="Delete">✕</span></td></tr>';
+                '<span style="color:#c44;cursor:pointer;font-size:16px" onclick="deleteJob(\'' + j.id + '\')" title="Delete">✕</span></td></tr>';
         });
         chtml += '</tbody></table>';
     } else {

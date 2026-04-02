@@ -1,0 +1,24 @@
+<div style="padding:0.75rem">
+    <div style="font-size:12px;color:var(--grey);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
+        <div>
+            {{ prompt.submitted_by.username }}
+            · {{ prompt.section.title|default:prompt.section.name }}
+            · v{{ prompt.version }}{% if not prompt.is_current %} (superseded){% endif %}
+            · {{ prompt.created_at|date:"M j H:i" }}
+            · <a href="{% url 'codoc:prompt' prompt.group_id %}">permalink</a>
+        </div>
+        {% if user.is_authenticated %}
+        <div style="display:flex;gap:8px">
+            <button class="btn" onclick="loadEditor('{{ prompt.group_id }}')">Generate</button>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="prompt-content">{{ prompt.content }}</div>
+
+    {% if page_count %}
+    <p style="font-size:13px;color:var(--grey);margin-top:12px">{{ page_count }} generated page{{ page_count|pluralize }} — expand ▶ in browse list to view.</p>
+    {% else %}
+    <p class="empty" style="margin-top:12px">No pages generated yet.</p>
+    {% endif %}
+</div>

@@ -27,18 +27,50 @@ logger = logging.getLogger(__name__)
 # ── Browse (two-panel home) ──────────────────────────────────────────────────
 
 def home(request):
-    """Two-panel browse: prompts + pages on left, detail on right."""
+    """Two-panel browse: prompt versions with their pages nested underneath."""
     sections = Section.objects.filter(status='active').order_by('data__sort_order', 'name')
 
     for sec in sections:
-        prompts = list(sec.prompts.filter(
+        # Get current prompt versions (the group representatives)
+        current_prompts = list(sec.prompts.filter(
             is_current=True,
         ).exclude(status='rejected').order_by('-created_at'))
-        pages = list(sec.pages.filter(
-            is_current=True, status='published'
+
+        # For each prompt group, get all versions + their pages
+        browse_items = []
+        for cp in current_prompts:
+            all_pages = list(Page.objects.filter(
+                prompt__group_id=cp.group_id,
+                is_current=True, status='published',
+            ).select_related('prompt').order_by('-created_at'))
+            # Group pages by prompt content (not version row)
+            # Pages from same-text versions go together under current
+            pages_by_content = {}
+            for page in all_pages:
+                pages_by_content.setdefault(page.prompt.content, []).append(page)
+            # Current version gets pages matching its text
+            cp.child_pages = pages_by_content.pop(cp.content, [])
+            browse_items.append(cp)
+            # Older versions only if they have pages with DIFFERENT text
+            if pages_by_content:
+                older = list(Prompt.objects.filter(
+                    group_id=cp.group_id,
+                ).exclude(id=cp.id).order_by('-version'))
+                seen_content = set()
+                for pv in older:
+                    if pv.content in pages_by_content and pv.content not in seen_content:
+                        pv.child_pages = pages_by_content[pv.content]
+                        browse_items.append(pv)
+                        seen_content.add(pv.content)
+
+        # Orphaned pages (no prompt) — show as standalone items
+        orphan_pages = list(Page.objects.filter(
+            section=sec, prompt__isnull=True,
+            is_current=True, status='published',
         ).order_by('-created_at'))
-        sec.browse_prompts = prompts
-        sec.browse_pages = pages
+
+        sec.browse_items = browse_items
+        sec.orphan_pages = orphan_pages
 
     return render(request, 'codoc_app/home.html', {
         'sections': sections,
@@ -61,10 +93,35 @@ def _get_prompt_def(prompt):
     return JobDefinition.objects.filter(name='codoc-generate').first()
 
 
+def prompt_info_fragment(request, group_id):
+    """AJAX fragment: prompt info only (no pages) for Documents browse."""
+    vid = request.GET.get('vid')
+    if vid:
+        prompt = get_object_or_404(Prompt, id=vid)
+        page_count = Page.objects.filter(prompt=prompt, is_current=True, status='published').count()
+    else:
+        prompt = get_object_or_404(Prompt, group_id=group_id, is_current=True)
+        page_count = Page.objects.filter(
+            prompt__group_id=group_id, is_current=True, status='published').count()
+    html = render_to_string('codoc_app/_prompt_info_fragment.html', {
+        'prompt': prompt, 'page_count': page_count,
+    }, request=request)
+    return HttpResponse(html)
+
+
 def prompt_fragment(request, group_id):
-    """AJAX fragment: prompt detail for right panel."""
-    prompt = get_object_or_404(Prompt, group_id=group_id, is_current=True)
-    pages = Page.objects.filter(prompt__group_id=group_id, is_current=True)
+    """AJAX fragment: prompt detail for right panel.
+
+    If ?vid=<uuid> is passed, show that specific prompt version and only
+    its pages. Otherwise show current version with all pages.
+    """
+    vid = request.GET.get('vid')
+    if vid:
+        prompt = get_object_or_404(Prompt, id=vid)
+        pages = Page.objects.filter(prompt=prompt, is_current=True)
+    else:
+        prompt = get_object_or_404(Prompt, group_id=group_id, is_current=True)
+        pages = Page.objects.filter(prompt__group_id=group_id, is_current=True)
     job_def = _get_prompt_def(prompt)
     definitions = JobDefinition.objects.filter(status='active')
     html = render_to_string('codoc_app/_prompt_fragment.html', {

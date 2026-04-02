@@ -6,9 +6,8 @@
             {{ page.data.submitted_by }}
             · {{ page.section.title|default:page.section.name }}
             · Page v{{ page.version }} · {{ page.created_at|date:"M j H:i" }}
-            {% if page.data.generation_model %} · {{ page.data.generation_model }}{% endif %}
             {% if page.data.generation_time_s %} · {{ page.data.generation_time_s|duration }}{% endif %}
-            {% if page.data.definition_name %} · {{ page.data.definition_name }}{% endif %}
+            {% if page.data.definition_name %} · <a href="{% url 'codoc:definitions' %}{% if page.data.definition_id %}?select={{ page.data.definition_id }}{% endif %}">{{ page.data.definition_name }}</a>{% elif page.data.generation_model %} · {{ page.data.generation_model }}{% endif %}
             · <a href="{% url 'codoc:page' page.group_id %}">permalink</a>
         </div>
         {% if user.is_authenticated %}
@@ -16,8 +15,12 @@
         {% endif %}
     </div>
 
-    <!-- User prompt — from page data -->
+    <!-- User prompt -->
+    {% if page.data.prompt_content %}
     <div class="prompt-content">{{ page.data.prompt_content }}</div>
+    {% elif page.prompt %}
+    <div class="prompt-content">{{ page.prompt.content }}</div>
+    {% endif %}
 
     <!-- Rendered content -->
     <div class="content">

@@ -7,11 +7,10 @@
 {% endblock %}
 
 {% block extra_css %}
-.theme-choice { display: flex; gap: 8px; margin-top: 6px; }
-.theme-btn { padding: 6px 16px; border: 1px solid var(--border); border-radius: 4px;
-    cursor: pointer; font-size: 13px; font-family: inherit; }
-.theme-btn.active { border-color: var(--accent); color: var(--accent); }
-.theme-btn:not(.active) { background: var(--card-bg); color: var(--grey); }
+.theme-sw { font-size: 14px; margin-top: 6px; }
+.theme-sw span { color: var(--grey); padding: 2px 0; }
+.theme-sw a { color: var(--link); cursor: pointer; text-decoration: none; padding: 2px 0; }
+.theme-sw a:hover { text-decoration: underline; }
 {% endblock %}
 
 {% block body %}
@@ -24,14 +23,25 @@
 {% endif %}
 
 <h2>Theme</h2>
-<form method="post">
-    {% csrf_token %}
-    <div class="theme-choice">
-        <button type="submit" name="theme" value="dark" class="theme-btn {% if profile.theme == 'dark' %}active{% endif %}">Dark</button>
-        <button type="submit" name="theme" value="light" class="theme-btn {% if profile.theme == 'light' %}active{% endif %}">Light</button>
-    </div>
-</form>
+<div class="theme-sw" id="theme-switcher"></div>
 
 <h2>Password</h2>
 <p><a href="{% url 'password_change' %}">Change password</a></p>
+
+<script>
+function setTheme(t) {
+    fetch('{% url "account" %}', {
+        method: 'POST',
+        headers: {'X-CSRFToken': '{{ csrf_token }}', 'Content-Type': 'application/x-www-form-urlencoded'},
+        body: 'theme=' + t,
+    }).then(() => { document.body.classList.toggle('light', t === 'light'); renderSwitcher(t); });
+}
+function renderSwitcher(current) {
+    var el = document.getElementById('theme-switcher');
+    var dark = current === 'dark' ? '<span>dark</span>' : '<a onclick="setTheme(\'dark\')">dark</a>';
+    var light = current === 'light' ? '<span>light</span>' : '<a onclick="setTheme(\'light\')">light</a>';
+    el.innerHTML = dark + ' · ' + light;
+}
+renderSwitcher('{{ profile.theme|default:"dark" }}');
+</script>
 {% endblock %}

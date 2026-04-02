@@ -33,6 +33,7 @@ urlpatterns = [
     path('about/edit/', views.about_edit, name='about_edit'),
     # AJAX fragments
     path('_fragment/prompt/<uuid:group_id>/', views.prompt_fragment, name='prompt_fragment'),
+    path('_fragment/prompt-info/<uuid:group_id>/', views.prompt_info_fragment, name='prompt_info_fragment'),
     path('_fragment/page/<uuid:group_id>/', views.page_fragment, name='page_fragment'),
     path('_fragment/editor/', views.editor_fragment, name='editor_new'),
     path('_fragment/editor/<uuid:group_id>/', views.editor_fragment, name='editor_version'),
