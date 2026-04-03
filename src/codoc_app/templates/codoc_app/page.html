@@ -1,17 +1,25 @@
 {% extends "codoc_app/base.html" %}
+{% load codoc_filters %}
 
 {% block title %}Documentation Page — ePIC Code Documentation{% endblock %}
 
-{% block nav %}
-<nav>
-    <a href="{% url 'codoc:home' %}">Home</a>
-    <a href="{% url 'codoc:section' page.section.name %}">{{ page.section.title|default:page.section.name }}</a>
-    <a href="{% url 'codoc:prompt' page.prompt.group_id %}">Prompt</a>
-</nav>
-{% endblock %}
-
 {% block body %}
-<div class="meta">version {{ page.version }} · {{ page.status }} · {{ page.created_at|date:"M j H:i" }}</div>
+<div style="font-size:12px;color:var(--grey);margin-bottom:8px">
+    {{ page.data.submitted_by }}
+    · {{ page.section.title|default:page.section.name }}
+    · Page v{{ page.version }} · {{ page.created_at|date:"M j H:i" }}
+    {% if page.data.generation_time_s %} · {{ page.data.generation_time_s|duration }}{% endif %}
+    {% if page.data.definition_name %} · <a href="{% url 'codoc:definitions' %}{% if page.data.definition_id %}?select={{ page.data.definition_id }}{% endif %}">{{ page.data.definition_name }}</a>{% elif page.data.generation_model %} · {{ page.data.generation_model }}{% endif %}
+</div>
+
+<h2 style="font-size:1.4em;font-weight:600;color:var(--accent);margin-top:16px;margin-bottom:6px">The prompt</h2>
+{% if page.data.prompt_content %}
+<div class="prompt-content">{{ page.data.prompt_content }}</div>
+{% elif page.prompt %}
+<div class="prompt-content">{{ page.prompt.content }}</div>
+{% endif %}
+
+<h2 style="font-size:1.4em;font-weight:600;color:var(--accent);margin-top:20px;margin-bottom:6px">The report</h2>
 <div class="content">
     {% if page.content_rendered %}
         {{ page.content_rendered|safe }}

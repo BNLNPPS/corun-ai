@@ -49,6 +49,7 @@ urlpatterns = [
     path('_api/job/<uuid:job_id>/thinking/', views.job_thinking, name='job_thinking'),
     path('_api/comment/post/', views.comment_post, name='comment_post'),
     path('_api/comment/<uuid:pk>/delete/', views.comment_delete, name='comment_delete'),
+    path('comments/', views.comments_page, name='comments'),
     path('prs/', views.epic_prs_view, name='epic_prs'),
     path('_api/prs/', views.epic_prs_api, name='epic_prs_api'),
 ]

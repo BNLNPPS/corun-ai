@@ -594,18 +594,16 @@ def job_delete(request, pk):
 @require_POST
 @login_required
 def comment_post(request):
-    """Post a comment on a prompt group or a specific page."""
+    """Post a comment on a prompt group, a page, or standalone."""
     content = request.POST.get('content', '').strip()
     prompt_group = request.POST.get('prompt_group', '').strip()
     page_id = request.POST.get('page_id', '').strip()
     if not content:
         return JsonResponse({'error': 'Content required.'}, status=400)
-    if not prompt_group and not page_id:
-        return JsonResponse({'error': 'prompt_group or page_id required.'}, status=400)
     kwargs = {'author': request.user, 'content': content}
     if page_id:
         kwargs['page'] = get_object_or_404(Page, id=page_id)
-    if prompt_group:
+    if prompt_group and prompt_group != 'global':
         kwargs['prompt_group'] = prompt_group
     Comment.objects.create(**kwargs)
     return JsonResponse({'ok': True})
@@ -620,6 +618,33 @@ def comment_delete(request, pk):
         return JsonResponse({'error': 'Not your comment.'}, status=403)
     comment.delete()
     return JsonResponse({'ok': True})
+
+
+def comments_page(request):
+    """All comments across the app, reverse chronological."""
+    comments = list(Comment.objects.select_related(
+        'author', 'page', 'page__prompt',
+    ).order_by('-created_at')[:200])
+    # Resolve prompt labels — from prompt_group or from page.prompt
+    prompt_groups = set()
+    for c in comments:
+        if c.prompt_group:
+            prompt_groups.add(c.prompt_group)
+        if c.page and c.page.prompt:
+            prompt_groups.add(c.page.prompt.group_id)
+    prompt_map = {}
+    if prompt_groups:
+        for p in Prompt.objects.filter(group_id__in=prompt_groups, is_current=True):
+            prompt_map[p.group_id] = p.content[:80]
+    for c in comments:
+        if c.prompt_group:
+            c.prompt_label = prompt_map.get(c.prompt_group, '')
+        elif c.page and c.page.prompt:
+            c.prompt_label = prompt_map.get(c.page.prompt.group_id, '')
+            c.prompt_group_resolved = c.page.prompt.group_id
+        else:
+            c.prompt_label = ''
+    return render(request, 'codoc_app/comments.html', {'comments': comments})
 
 
 # ── Logs ─────────────────────────────────────────────────────────────────────
