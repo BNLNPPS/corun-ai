@@ -54,6 +54,20 @@ MCP_SERVERS = {
             },
         },
     },
+    'rucio-jlab': {
+        'label': 'Rucio JLab (data management)',
+        'config': {
+            'command': '/home/admin/github/rucio-eic-mcp-server/.venv/bin/rucio-eic-mcp',
+            'args': [],
+            'env': {
+                'RUCIO_URL': 'https://rucio-server.jlab.org:443',
+                'RUCIO_AUTH_TYPE': 'userpass',
+                'RUCIO_ACCOUNT': 'eicread',
+                'RUCIO_USERNAME': 'eicread',
+                'RUCIO_PASSWORD': 'eicread',
+            },
+        },
+    },
 }
 from django.db import models
 
