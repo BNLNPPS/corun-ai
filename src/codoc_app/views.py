@@ -477,7 +477,7 @@ def queue_status_api(request):
     import subprocess as sp
     from django.utils import timezone as tz
 
-    jobs = Job.objects.select_related('definition', 'prompt').order_by('-created_at')[:50]
+    jobs = Job.objects.select_related('definition', 'prompt__submitted_by').order_by('-created_at')[:50]
 
     # Find claude -p processes spawned by the worker
     claude_procs = {}
@@ -538,6 +538,7 @@ def queue_status_api(request):
             'timing': j.data.get('timing'),
             'error': j.data.get('error', '')[:200] if j.data.get('error') else None,
             'page_group_id': j.data.get('result_page_group_id'),
+            'user': j.prompt.submitted_by.username if j.prompt and j.prompt.submitted_by else '',
         })
     has_active = any(j['status'] in ('queued', 'running') for j in result)
     return JsonResponse({

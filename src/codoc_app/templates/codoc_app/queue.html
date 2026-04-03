@@ -1,6 +1,6 @@
 {% extends "codoc_app/base.html" %}
 
-{% block title %}Job Queue — ePIC Code Documentation{% endblock %}
+{% block title %}Job Queue — codoc-ai{% endblock %}
 
 {% block nav %}
 <nav><a href="{% url 'codoc:home' %}">Browse</a></nav>
@@ -41,7 +41,7 @@ function renderQueue(data) {
     let ahtml = '';
     if (active.length > 0) {
         ahtml = '<h2>Active <span style="font-size:12px;color:var(--grey)">(live)</span></h2>';
-        ahtml += '<table class="queue"><thead><tr><th>Prompt</th><th>Definition</th><th>Status</th><th>Started</th><th>Elapsed</th><th></th></tr></thead><tbody>';
+        ahtml += '<table class="queue"><thead><tr><th>Prompt</th><th>Definition</th><th>User</th><th>Status</th><th>Started</th><th>Elapsed</th><th></th></tr></thead><tbody>';
         active.forEach(j => {
             const started = new Date(j.created_iso);
             const secs = Math.floor((Date.now() - started) / 1000);
@@ -50,7 +50,7 @@ function renderQueue(data) {
             const elapsed = m + ':' + String(s).padStart(2, '0');
             const abortUrl = ABORT_URL.replace('00000000-0000-0000-0000-000000000000', j.id);
             ahtml += '<tr><td>' + truncate(j.prompt || '—', 60) + '</td><td>' + j.definition +
-                '</td><td><span class="status status-' + j.status + '">' + j.status +
+                '</td><td>' + (j.user || '') + '</td><td><span class="status status-' + j.status + '">' + j.status +
                 '</span></td><td>' + j.created + '</td><td>' + elapsed +
                 '</td><td><button class="btn" style="background:#7f1d1d;font-size:11px;padding:2px 8px" onclick="abortJob(\'' + j.id + '\')">Abort</button></td></tr>';
         });
@@ -63,7 +63,7 @@ function renderQueue(data) {
     // Completed section
     let chtml = '<h2>Completed</h2>';
     if (completed.length > 0) {
-        chtml += '<table class="queue"><thead><tr><th>Prompt</th><th>Definition</th><th>Status</th><th>Time</th><th>Result</th><th></th></tr></thead><tbody>';
+        chtml += '<table class="queue"><thead><tr><th>Prompt</th><th>Definition</th><th>User</th><th>Status</th><th style="white-space:nowrap">Time</th><th>Result</th><th></th></tr></thead><tbody>';
         completed.forEach(j => {
             let result = '';
             if (j.page_group_id) {
@@ -71,15 +71,15 @@ function renderQueue(data) {
                 result = '<a href="' + url + '">View page</a>';
             }
             if (j.error) {
-                result += '<span style="color:#c44;font-size:12px">' + truncate(j.error, 80) + '</span>';
+                result += '<span style="color:#c44;font-size:12px">' + truncate(j.error, 40) + '</span>';
             }
             let timing = '';
             if (j.timing) {
                 const ts = Math.round(j.timing);
-                timing = ts < 60 ? ' · ' + ts + 's' : ' · ' + Math.floor(ts/60) + 'm ' + (ts%60) + 's';
+                timing = ts < 60 ? '<br>' + ts + 's' : '<br>' + Math.floor(ts/60) + 'm ' + (ts%60) + 's';
             }
             chtml += '<tr><td>' + truncate(j.prompt || '—', 60) + '</td><td>' + j.definition +
-                '</td><td><span class="status status-' + j.status + '">' + j.status +
+                '</td><td>' + (j.user || '') + '</td><td><span class="status status-' + j.status + '">' + j.status +
                 '</span></td><td>' + j.created + timing + '</td><td>' + result +
                 '</td><td>' +
                 '<button class="btn" style="background:#14532d;font-size:11px;padding:2px 8px;margin-right:16px" onclick="rerunJob(\'' + j.id + '\')">Rerun</button>' +
