@@ -19,6 +19,42 @@ MODEL_CHOICES = [
 ]
 
 GEMINI_MODELS = {m[0] for m in MODEL_CHOICES if m[2] == 'Gemini'}
+
+# Available MCP servers: (key, label, config_dict)
+MCP_SERVERS = {
+    'lxr': {
+        'label': 'LXR Code Browser',
+        'config': {
+            'command': '/home/admin/github/lxr-mcp-server/.venv/bin/python',
+            'args': ['/home/admin/github/lxr-mcp-server/lxr_mcp_server.py'],
+        },
+    },
+    'github': {
+        'label': 'GitHub',
+        'config': {
+            'command': '/home/admin/bin/github-mcp-server',
+            'args': ['stdio'],
+        },
+    },
+    'swf-testbed': {
+        'label': 'SWF Testbed (PanDA, PCS, Workflows)',
+        'config': {
+            'type': 'http',
+            'url': 'https://pandaserver02.sdcc.bnl.gov/swf-monitor/mcp/',
+        },
+    },
+    'xrootd': {
+        'label': 'XRootD (EIC production files)',
+        'config': {
+            'command': 'node',
+            'args': ['/home/admin/github/xrootd-mcp-server/build/src/index.js'],
+            'env': {
+                'XROOTD_SERVER': 'root://dtn-eic.jlab.org',
+                'XROOTD_BASE_DIR': '/volatile/eic/EPIC',
+            },
+        },
+    },
+}
 from django.db import models
 
 

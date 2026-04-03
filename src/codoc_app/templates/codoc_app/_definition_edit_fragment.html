@@ -43,12 +43,11 @@
 
         <label style="display:block;font-size:12px;color:var(--grey);margin-bottom:4px">MCP Tools</label>
         <div style="margin-bottom:12px">
+            {% for key, label in mcp_choices %}
             <label style="display:inline;font-size:13px;color:var(--text);margin-right:16px">
-                <input type="checkbox" name="mcp_tools" value="lxr" {% if not definition or 'lxr' in definition.data.mcp_tools %}checked{% endif %}> LXR
+                <input type="checkbox" name="mcp_tools" value="{{ key }}" {% if definition and key in definition.data.mcp_tools %}checked{% elif not definition and key == 'lxr' %}checked{% endif %}> {{ label }}
             </label>
-            <label style="display:inline;font-size:13px;color:var(--text);margin-right:16px">
-                <input type="checkbox" name="mcp_tools" value="github" {% if not definition or 'github' in definition.data.mcp_tools %}checked{% endif %}> GitHub
-            </label>
+            {% endfor %}
         </div>
 
         <label style="display:block;font-size:12px;color:var(--grey);margin-bottom:4px">System Prompt</label>

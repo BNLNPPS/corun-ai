@@ -185,12 +185,23 @@ class Worker:
         model = job_def.data.get('model', 'sonnet')
         timeout = job_def.data.get('timeout_s', DEFAULT_TIMEOUT)
 
+        # Create job dir and write .mcp.json with selected servers
+        job_dir = os.path.join('/var/www/corun-ai/data/jobs', str(job.id))
+        os.makedirs(job_dir, exist_ok=True)
+        mcp_tools = job_def.data.get('mcp_tools', [])
+        if mcp_tools:
+            from corun_app.models import MCP_SERVERS
+            mcp_conf = {}
+            for tool_key in mcp_tools:
+                if tool_key in MCP_SERVERS:
+                    mcp_conf[tool_key] = MCP_SERVERS[tool_key]['config']
+            if mcp_conf:
+                import json as _json
+                with open(os.path.join(job_dir, '.mcp.json'), 'w') as f:
+                    _json.dump({'mcpServers': mcp_conf}, f)
+
         if model in GEMINI_MODELS:
             gemini_path = _find_gemini()
-            # Gemini CLI: combine system + user prompt into -p
-            # Run from a job-specific dir so write_file output lands there
-            job_dir = os.path.join('/var/www/corun-ai/data/jobs', str(job.id))
-            os.makedirs(job_dir, exist_ok=True)
             combined = (
                 f"SYSTEM INSTRUCTIONS (follow these for all responses):\n"
                 f"{system_prompt.content}\n\n"
@@ -221,6 +232,7 @@ class Worker:
             'LANG': 'C.UTF-8',
             'LC_ALL': 'C.UTF-8',
             'TJAI_ACTION_ID': 'codoc-generate',
+            'NODE_EXTRA_CA_CERTS': '/etc/pki/tls/certs/ca-bundle.crt',
         }
 
         job.status = 'running'
@@ -240,7 +252,7 @@ class Worker:
             stderr=subprocess.PIPE,
             text=True,
             env=env,
-            cwd=job_dir if use_gemini else None,
+            cwd=job_dir,
         )
         if not use_gemini:
             proc.stdin.write(prompt.content)

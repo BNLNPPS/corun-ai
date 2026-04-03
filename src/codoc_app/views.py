@@ -671,7 +671,12 @@ def definition_fragment(request, pk):
     if sp_gid:
         sp = SystemPrompt.objects.filter(group_id=sp_gid, is_current=True).first()
     sysprompts = SystemPrompt.objects.filter(is_current=True)
-    from corun_app.models import GEMINI_MODELS
+    from corun_app.models import GEMINI_MODELS, MCP_SERVERS
+    # Resolve MCP tool keys to labels
+    mcp_tools = d.data.get('mcp_tools', [])
+    d.data['mcp_tools_display'] = ', '.join(
+        MCP_SERVERS[k]['label'] for k in mcp_tools if k in MCP_SERVERS
+    ) or 'None'
     model = d.data.get('model', 'sonnet')
     if model in GEMINI_MODELS:
         d.data['cli_preview'] = f'gemini -m {model} --yolo -p "<prompt>"'
@@ -738,7 +743,7 @@ def definition_edit(request, pk=None):
             sp = SystemPrompt.objects.filter(group_id=sp_gid, is_current=True).first()
             if sp:
                 current_sp_content = sp.content
-    from corun_app.models import MODEL_CHOICES
+    from corun_app.models import MODEL_CHOICES, MCP_SERVERS
     from collections import OrderedDict
     _mg = OrderedDict()
     for value, label, group in MODEL_CHOICES:
@@ -749,6 +754,7 @@ def definition_edit(request, pk=None):
         'definition': d, 'sysprompts': sysprompts,
         'current_sp_content': current_sp_content,
         'model_groups': model_groups,
+        'mcp_choices': [(k, v['label']) for k, v in MCP_SERVERS.items()],
         'sp_contents_json': json.dumps(sp_contents),
     }, request=request)
     return HttpResponse(html)
