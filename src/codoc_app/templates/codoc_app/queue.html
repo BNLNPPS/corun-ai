@@ -57,7 +57,11 @@ function renderQueue(data) {
                 startedDisplay = j.started || j.created;
             }
         }
-        return '<tr><td>' + truncate(j.prompt || '—', 60) + '</td><td>' + j.definition +
+        let promptCell = truncate(j.prompt || '—', 60);
+        if (j.commented) {
+            promptCell += '<div style="color:var(--accent);font-size:11px;margin-top:2px">Commented</div>';
+        }
+        return '<tr><td>' + promptCell + '</td><td>' + j.definition +
             '</td><td>' + (j.user || '') + '</td><td><span class="status status-' + j.status + '">' + j.status +
             '</span></td><td>' + startedDisplay + '</td><td>' + elapsed +
             '</td><td><button class="btn" style="background:#7f1d1d;font-size:11px;padding:2px 8px" onclick="abortJob(\'' + j.id + '\')">Abort</button></td></tr>';
@@ -102,7 +106,11 @@ function renderQueue(data) {
                 const ts = Math.round(j.timing);
                 timing = ts < 60 ? '<br>' + ts + 's' : '<br>' + Math.floor(ts/60) + 'm ' + (ts%60) + 's';
             }
-            chtml += '<tr><td>' + truncate(j.prompt || '—', 60) + '</td><td>' + j.definition +
+            let completedPromptCell = truncate(j.prompt || '—', 60);
+            if (j.commented) {
+                completedPromptCell += '<div style="color:var(--accent);font-size:11px;margin-top:2px">Commented</div>';
+            }
+            chtml += '<tr><td>' + completedPromptCell + '</td><td>' + j.definition +
                 '</td><td>' + (j.user || '') + '</td><td><span class="status status-' + j.status + '">' + j.status +
                 '</span></td><td>' + j.created + timing + '</td><td>' + result +
                 '</td><td>' +
@@ -150,9 +158,27 @@ function abortJob(id) {
 }
 
 function rerunJob(id) {
+    doRerun(id, null);
+}
+function doRerun(id, spVersion) {
+    var formData = new FormData();
+    formData.set('csrfmiddlewaretoken', CSRF);
+    if (spVersion !== null) formData.set('sp_version', spVersion);
     fetch(RERUN_URL.replace('00000000-0000-0000-0000-000000000000', id), {
-        method: 'POST', headers: {'X-CSRFToken': CSRF},
-    }).then(r => r.json()).then(() => pollQueue());
+        method: 'POST', body: formData, headers: {'X-CSRFToken': CSRF},
+    }).then(r => r.json()).then(data => {
+        if (data && data.needs_choice) {
+            var msg = 'The system prompt has changed since this job was originally run.\n\n' +
+                      'Original: v' + data.original_version + '\n' +
+                      'Latest:   v' + data.current_version + '\n\n' +
+                      'OK = use the LATEST (v' + data.current_version + ')\n' +
+                      'Cancel = use the ORIGINAL (v' + data.original_version + ')';
+            var useLatest = confirm(msg);
+            doRerun(id, useLatest ? data.current_version : data.original_version);
+            return;
+        }
+        pollQueue();
+    });
 }
 
 function deleteJob(id) {

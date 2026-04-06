@@ -47,6 +47,13 @@
         {% endif %}
     </div>
 
+    {% if page.data.stderr %}
+    <details style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px">
+        <summary style="font-size:12px;color:var(--grey);cursor:pointer">stderr ({{ page.data.stderr|length }} chars)</summary>
+        <pre style="font-size:11px;white-space:pre-wrap;background:var(--code-bg);padding:10px;border-radius:4px;margin-top:8px;max-height:500px;overflow-y:auto;color:var(--grey)">{{ page.data.stderr }}</pre>
+    </details>
+    {% endif %}
+
     <!-- Comments on this page -->
     <div style="margin-top:24px;border-top:1px solid var(--border);padding-top:16px">
         <h3 style="font-size:13px;color:var(--accent);margin-bottom:12px">Comments ({{ comments|length }})</h3>
@@ -137,10 +144,27 @@ function deletePage(groupId) {
 }
 function resubmitPage(jobId) {
     if (!confirm('Resubmit the same prompt to the same definition?\n\nA new job will be queued.')) return;
+    doResubmit(jobId, null);
+}
+function doResubmit(jobId, spVersion) {
+    var formData = new FormData();
+    formData.set('csrfmiddlewaretoken', '{{ csrf_token }}');
+    if (spVersion !== null) formData.set('sp_version', spVersion);
     fetch('{% url "codoc:job_rerun" "00000000-0000-0000-0000-000000000000" %}'.replace('00000000-0000-0000-0000-000000000000', jobId), {
         method: 'POST',
+        body: formData,
         headers: {'X-CSRFToken': '{{ csrf_token }}'},
     }).then(r => r.json()).then(data => {
+        if (data.needs_choice) {
+            var msg = 'The system prompt has changed since this job was originally run.\n\n' +
+                      'Original: v' + data.original_version + '\n' +
+                      'Latest:   v' + data.current_version + '\n\n' +
+                      'OK = use the LATEST (v' + data.current_version + ')\n' +
+                      'Cancel = use the ORIGINAL (v' + data.original_version + ')';
+            var useLatest = confirm(msg);
+            doResubmit(jobId, useLatest ? data.current_version : data.original_version);
+            return;
+        }
         if (data.ok) { window.location.href = '{% url "codoc:queue" %}'; }
         else { alert(data.error || 'Resubmit failed'); }
     }).catch(err => alert('Resubmit failed: ' + err));

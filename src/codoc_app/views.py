@@ -457,7 +457,8 @@ def prompt_detail(request, group_id):
 
 def page_detail(request, group_id):
     page = get_object_or_404(Page, group_id=group_id, is_current=True)
-    return render(request, 'codoc_app/page.html', {'page': page})
+    comments = list(Comment.objects.filter(page=page).select_related('author'))
+    return render(request, 'codoc_app/page.html', {'page': page, 'comments': comments})
 
 
 # ── Queue (job history) ─────────────────────────────────────────────────────
@@ -475,11 +476,36 @@ def queue(request):
 def queue_status_api(request):
     """AJAX: return current queue state + process monitoring for active jobs."""
     import subprocess as sp
+    from django.db.models import Count
     from django.utils import timezone as tz
 
-    jobs = Job.objects.select_related(
+    jobs = list(Job.objects.select_related(
         'definition', 'prompt__submitted_by', 'triggered_by',
-    ).order_by('-created_at')[:50]
+    ).order_by('-created_at')[:50])
+
+    # Pre-compute "has any comments" per job in two batched queries — one
+    # for prompt-group comments, one for result-page comments. A job is
+    # marked commented if either applies.
+    prompt_groups = {j.prompt.group_id for j in jobs if j.prompt}
+    result_page_groups = {
+        j.data.get('result_page_group_id') for j in jobs
+        if j.data.get('result_page_group_id')
+    }
+    prompt_groups_with_comments = set(
+        Comment.objects.filter(prompt_group__in=prompt_groups)
+        .values_list('prompt_group', flat=True).distinct()
+    )
+    page_id_by_group = dict(
+        Page.objects.filter(group_id__in=result_page_groups, is_current=True)
+        .values_list('group_id', 'id')
+    )
+    page_ids_with_comments = set(
+        Comment.objects.filter(page_id__in=page_id_by_group.values())
+        .values_list('page_id', flat=True).distinct()
+    )
+    page_groups_with_comments = {
+        str(g) for g, pid in page_id_by_group.items() if pid in page_ids_with_comments
+    }
 
     # Find claude -p processes spawned by the worker
     claude_procs = {}
@@ -540,11 +566,17 @@ def queue_status_api(request):
         if j.status == 'running':
             started = tz.localtime(j.modified_at).strftime('%b %-d %H:%M')
             started_iso = j.modified_at.isoformat()
+        result_page_group = j.data.get('result_page_group_id')
+        commented = (
+            (j.prompt and j.prompt.group_id in prompt_groups_with_comments)
+            or (result_page_group and str(result_page_group) in page_groups_with_comments)
+        )
         result.append({
             'id': str(j.id),
             'status': j.status,
             'definition': j.definition.name,
             'prompt': j.prompt.content[:80] if j.prompt else j.data.get('prompt_content', '')[:80],
+            'commented': bool(commented),
             'created': tz.localtime(j.created_at).strftime('%b %-d %H:%M'),
             'created_iso': j.created_at.isoformat(),
             'started': started,
@@ -586,13 +618,46 @@ def job_abort(request, pk):
 @require_POST
 @login_required
 def job_rerun(request, pk):
-    """Rerun a completed/failed job — create new job with same prompt and definition."""
+    """Rerun a completed/failed job — create new job with same prompt and definition.
+
+    If the system prompt has drifted since the original run, the first
+    POST returns {needs_choice, original_version, current_version} and
+    the client must POST again with sp_version set to either value to
+    explicitly pick latest or original (provenance/reproducibility).
+    """
     job = get_object_or_404(Job, id=pk)
     if not job.prompt:
         return JsonResponse({'error': 'Job has no prompt.'}, status=400)
 
+    sp_group_id = job.definition.data.get('system_prompt_group_id')
+    original_version = job.data.get('system_prompt_version')
+    requested = request.POST.get('sp_version', '').strip()
+
+    # Drift detection — only on first POST (no sp_version supplied)
+    if not requested and sp_group_id and original_version is not None:
+        cur = SystemPrompt.objects.filter(
+            group_id=sp_group_id, is_current=True,
+        ).first()
+        if cur and cur.version != original_version:
+            return JsonResponse({
+                'needs_choice': True,
+                'original_version': original_version,
+                'current_version': cur.version,
+            })
+
+    sp_version_override = None
+    if requested:
+        try:
+            sp_version_override = int(requested)
+        except ValueError:
+            return JsonResponse({'error': 'invalid sp_version'}, status=400)
+
     from .generate import start_generation
-    new_job = start_generation(job.prompt, job.definition, triggered_by=request.user)
+    new_job = start_generation(
+        job.prompt, job.definition,
+        triggered_by=request.user,
+        system_prompt_version=sp_version_override,
+    )
     return JsonResponse({'ok': True, 'job_id': str(new_job.id)})
 
 

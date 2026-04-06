@@ -249,13 +249,29 @@ class Worker:
         if not prompt:
             raise RuntimeError("Job has no prompt")
 
-        # System prompt
+        # System prompt — honor the version pinned in job.data for
+        # reproducibility/provenance. Reruns may explicitly choose
+        # original or latest; either way the choice is recorded in
+        # job.data['system_prompt_version'] at submission time and
+        # the worker uses that exact version, never silently sliding
+        # to whatever became is_current in the meantime. Legacy jobs
+        # without a pinned version fall back to is_current.
         sp_group_id = job_def.data.get('system_prompt_group_id')
+        pinned_version = job.data.get('system_prompt_version')
         system_prompt = None
         if sp_group_id:
-            system_prompt = SystemPrompt.objects.filter(
-                group_id=sp_group_id, is_current=True,
-            ).first()
+            sp_qs = SystemPrompt.objects.filter(group_id=sp_group_id)
+            if pinned_version is not None:
+                system_prompt = sp_qs.filter(version=pinned_version).first()
+                if not system_prompt:
+                    _log('warning',
+                         f'sysprompt v{pinned_version} pinned in job '
+                         f'{job.id} not found in group {sp_group_id}; '
+                         f'falling back to is_current',
+                         job_id=str(job.id))
+                    system_prompt = sp_qs.filter(is_current=True).first()
+            else:
+                system_prompt = sp_qs.filter(is_current=True).first()
         if not system_prompt:
             raise RuntimeError("No system prompt configured for definition")
 
@@ -506,17 +522,17 @@ class Worker:
                             with open(os.path.join(rj.job_dir, 'thinking.txt'), 'w') as f:
                                 f.write(stdout)
                         if content:
-                            self._complete_job(rj, content, elapsed, has_thinking=bool(stdout.strip()))
+                            self._complete_job(rj, content, elapsed, has_thinking=bool(stdout.strip()), stderr=stderr)
                         else:
                             self._finish_job(rj, 'failed', 'Gemini wrote empty output file')
                     elif retcode == 0 and stdout.strip():
                         # No file written — stdout IS the output (maybe with -o text)
-                        self._complete_job(rj, stdout.strip(), elapsed)
+                        self._complete_job(rj, stdout.strip(), elapsed, stderr=stderr)
                     else:
                         self._finish_job(rj, 'failed',
                                          f'Gemini produced no output (rc={retcode}, stderr: {stderr[:200]})')
                 elif retcode == 0 and stdout.strip():
-                    self._complete_job(rj, stdout.strip(), elapsed)
+                    self._complete_job(rj, stdout.strip(), elapsed, stderr=stderr)
                 elif retcode == 0:
                     self._finish_job(rj, 'failed',
                                      f'CLI returned empty output (stderr: {stderr[:200]})')
@@ -538,7 +554,7 @@ class Worker:
                     pass
                 self._finish_job(rj, 'failed', f'Timed out after {rj.timeout}s')
 
-    def _complete_job(self, rj, content_md, elapsed, has_thinking=False):
+    def _complete_job(self, rj, content_md, elapsed, has_thinking=False, stderr=None):
         try:
             job = Job.objects.get(id=rj.job_id)
             prompt = Prompt.objects.get(id=rj.prompt_id)
@@ -569,6 +585,7 @@ class Worker:
                     'has_thinking': has_thinking,
                     'definition_id': str(job_def.id),
                     'definition_name': job_def.name,
+                    'stderr': stderr or '',
                 },
             )
 

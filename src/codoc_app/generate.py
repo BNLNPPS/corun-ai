@@ -34,13 +34,19 @@ def get_or_create_default_def():
     return job_def
 
 
-def start_generation(prompt, job_def=None, triggered_by=None):
+def start_generation(prompt, job_def=None, triggered_by=None, system_prompt_version=None):
     """Create a queued Job row. The worker daemon picks it up.
 
     `triggered_by` is the user who initiated this run — same as
     prompt.submitted_by for original generation, but different for
     reruns where the rerunning user owns the new run while the prompt
     keeps its original author.
+
+    `system_prompt_version` pins a specific sysprompt version for this
+    run (used by reruns to reproduce the original or to deliberately
+    pick the latest after a drift confirmation). None = use whatever
+    is currently is_current at submission time. The pin is stored in
+    job.data['system_prompt_version'] and the worker honors it.
 
     Returns the Job immediately. The web app never runs claude -p.
     """
@@ -50,7 +56,14 @@ def start_generation(prompt, job_def=None, triggered_by=None):
     sp_group_id = job_def.data.get('system_prompt_group_id')
     sp_version = None
     if sp_group_id:
-        sp = SystemPrompt.objects.filter(group_id=sp_group_id, is_current=True).first()
+        if system_prompt_version is not None:
+            sp = SystemPrompt.objects.filter(
+                group_id=sp_group_id, version=system_prompt_version,
+            ).first()
+        else:
+            sp = SystemPrompt.objects.filter(
+                group_id=sp_group_id, is_current=True,
+            ).first()
         if sp:
             sp_version = sp.version
 
