@@ -48,6 +48,11 @@
                 <input type="checkbox" name="mcp_tools" value="{{ key }}" {% if definition and key in definition.data.mcp_tools %}checked{% elif not definition and key == 'lxr' %}checked{% endif %}> {{ label }}
             </label>
             {% endfor %}
+            {% for key, label in gemma_extra_choices %}
+            <label class="mcp-tool-label" data-mcp-key="{{ key }}" data-gemma-only="1" style="display:none;font-size:13px;color:var(--text);margin-right:16px">
+                <input type="checkbox" name="mcp_tools" value="{{ key }}" {% if definition and key in definition.data.mcp_tools %}checked{% endif %}> {{ label }}
+            </label>
+            {% endfor %}
         </div>
 
         <label style="display:block;font-size:12px;color:var(--grey);margin-bottom:4px">System Prompt</label>
@@ -97,6 +102,7 @@ function updateMcpToolsForModel() {
 
     container.querySelectorAll('label.mcp-tool-label').forEach(function(lbl) {
         var key = lbl.getAttribute('data-mcp-key');
+        var gemmaOnly = lbl.getAttribute('data-gemma-only') === '1';
         var cb = lbl.querySelector('input[type=checkbox]');
         if (!cb) return;
         if (isGemma) {
@@ -113,6 +119,15 @@ function updateMcpToolsForModel() {
                 cb.disabled = true;
                 lbl.style.display = 'none';
             }
+        } else if (gemmaOnly) {
+            // Mac-only tools have no local-execution config in
+            // MCP_SERVERS — selecting them for a claude/gemini def
+            // would silently fail at .mcp.json write time. Hide them
+            // in non-gemma mode and ensure they aren't carried over
+            // from a previous gemma selection.
+            cb.checked = false;
+            cb.disabled = true;
+            lbl.style.display = 'none';
         } else {
             cb.disabled = false;
             lbl.style.display = '';

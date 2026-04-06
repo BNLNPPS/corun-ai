@@ -25,12 +25,26 @@ MODEL_CHOICES = [
 GEMINI_MODELS = {m[0] for m in MODEL_CHOICES if m[2] == 'Gemini'}
 GEMMA_MODELS = {m[0] for m in MODEL_CHOICES if m[2] == 'Gemma'}
 
+# Mac-only MCP tools — labels for tools the Mac's tj_agent dispatcher
+# advertises to gemma runs but that corun-ai never spawns locally (so
+# they have no entry in MCP_SERVERS, which is the local-execution
+# registry). Their config lives on the Mac side; this dict exists only
+# so the codoc UI can show the user what gemma will actually have
+# available.
+GEMMA_EXTRA_MCP_LABELS = {
+    'fetch':      'Fetch (HTTP)',
+    'npp_search': 'NPP Search (Google CSE)',
+    'web_search': 'Web Search (SerpAPI)',
+}
+
 # Gemma jobs run on Torre's Mac Studio via the tjai remote-worker pipeline.
-# The Mac has `lxr` and `github` MCPs always available to the ollama runner;
-# other MCPs from MCP_SERVERS are not reachable from the Mac side. The codoc
-# definition UI reflects this by locking the MCP tool selection to exactly
-# these two (ticked, not editable) whenever the model is a Gemma model.
-GEMMA_FIXED_MCP_TOOLS = ['lxr', 'github']
+# Every tool the Mac advertises is always available — lxr/github are also
+# in MCP_SERVERS (they happen to have local-execution configs too), the
+# rest live in GEMMA_EXTRA_MCP_LABELS only. The codoc definition UI locks
+# Gemma definitions to exactly this set, ticked and not editable. Keep
+# this list in sync with what the Mac's tj_agent.dispatcher actually
+# wires up — that's the source of truth.
+GEMMA_FIXED_MCP_TOOLS = ['lxr', 'github', 'fetch', 'npp_search', 'web_search']
 
 # Available MCP servers: (key, label, config_dict)
 MCP_SERVERS = {

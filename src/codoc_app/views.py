@@ -672,12 +672,21 @@ def definition_fragment(request, pk):
     if sp_gid:
         sp = SystemPrompt.objects.filter(group_id=sp_gid, is_current=True).first()
     sysprompts = SystemPrompt.objects.filter(is_current=True)
-    from corun_app.models import GEMINI_MODELS, GEMMA_MODELS, MCP_SERVERS
-    # Resolve MCP tool keys to labels
+    from corun_app.models import (
+        GEMINI_MODELS, GEMMA_MODELS, MCP_SERVERS, GEMMA_EXTRA_MCP_LABELS,
+    )
+    # Resolve MCP tool keys to labels. Look in MCP_SERVERS first (local-
+    # execution registry), then fall back to GEMMA_EXTRA_MCP_LABELS for
+    # tools that only exist on the Mac side.
+    def _mcp_label(key):
+        if key in MCP_SERVERS:
+            return MCP_SERVERS[key]['label']
+        if key in GEMMA_EXTRA_MCP_LABELS:
+            return GEMMA_EXTRA_MCP_LABELS[key]
+        return None
     mcp_tools = d.data.get('mcp_tools', [])
-    d.data['mcp_tools_display'] = ', '.join(
-        MCP_SERVERS[k]['label'] for k in mcp_tools if k in MCP_SERVERS
-    ) or 'None'
+    labels = [lbl for lbl in (_mcp_label(k) for k in mcp_tools) if lbl]
+    d.data['mcp_tools_display'] = ', '.join(labels) or 'None'
     model = d.data.get('model', 'sonnet')
     d.data['is_gemma'] = model in GEMMA_MODELS
     if model in GEMMA_MODELS:
@@ -760,6 +769,7 @@ def definition_edit(request, pk=None):
                 current_sp_content = sp.content
     from corun_app.models import (
         MODEL_CHOICES, MCP_SERVERS, GEMMA_MODELS, GEMMA_FIXED_MCP_TOOLS,
+        GEMMA_EXTRA_MCP_LABELS,
     )
     from collections import OrderedDict
     _mg = OrderedDict()
@@ -772,6 +782,11 @@ def definition_edit(request, pk=None):
         'current_sp_content': current_sp_content,
         'model_groups': model_groups,
         'mcp_choices': [(k, v['label']) for k, v in MCP_SERVERS.items()],
+        # Mac-only MCPs — rendered as additional checkboxes after the
+        # regular ones. The template tags them with data-gemma-only so
+        # the JS can hide them in non-gemma mode (where they have no
+        # local-execution config and would silently fail if selected).
+        'gemma_extra_choices': list(GEMMA_EXTRA_MCP_LABELS.items()),
         'gemma_models_json': json.dumps(sorted(GEMMA_MODELS)),
         'gemma_fixed_mcp_json': json.dumps(list(GEMMA_FIXED_MCP_TOOLS)),
         'sp_contents_json': json.dumps(sp_contents),
