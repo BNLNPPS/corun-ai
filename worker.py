@@ -179,9 +179,22 @@ class Worker:
     def _main_loop(self):
         while not self.shutdown:
             self._check_running()
-            if len(self.running) < self.max_concurrent:
-                self._pick_up_jobs()
+            # Always call _pick_up_jobs — gemma jobs run on a remote
+            # machine (Mac Studio via tjai) and don't consume a local
+            # subprocess slot, so the cap shouldn't gate them. The
+            # pickup function applies the local cap only to the local
+            # subset of the queue.
+            self._pick_up_jobs()
             time.sleep(1)
+
+    def _local_running_count(self):
+        """Count of running jobs that occupy a local subprocess slot.
+
+        Gemma jobs run remotely on the Mac via tjai's worker pipeline —
+        they're a poll loop on this side, not a subprocess, so they
+        don't count against max_concurrent.
+        """
+        return sum(1 for rj in self.running.values() if not rj.use_gemma)
 
         # Graceful shutdown
         if self.running:
@@ -199,15 +212,26 @@ class Worker:
                 self._finish_job(rj, 'failed', 'Worker shutdown — job killed')
 
     def _pick_up_jobs(self):
-        slots = self.max_concurrent - len(self.running)
-        if slots <= 0:
-            return
+        # Pick up gemma jobs unconditionally (they don't take a local
+        # subprocess slot — the remote Mac worker handles concurrency
+        # on its side via the long-poll claim protocol).
+        gemma_models = list(GEMMA_MODELS)
+        gemma_queued = list(Job.objects.filter(
+            status='queued',
+            definition__data__model__in=gemma_models,
+        ).select_related('definition', 'prompt').order_by('created_at')[:20])
 
-        queued = Job.objects.filter(status='queued').select_related(
-            'definition', 'prompt',
-        ).order_by('created_at')[:slots]
+        # Local subprocess jobs are gated by the free local slots.
+        local_slots = self.max_concurrent - self._local_running_count()
+        non_gemma_queued = []
+        if local_slots > 0:
+            non_gemma_queued = list(Job.objects.filter(
+                status='queued',
+            ).exclude(
+                definition__data__model__in=gemma_models,
+            ).select_related('definition', 'prompt').order_by('created_at')[:local_slots])
 
-        for job in queued:
+        for job in gemma_queued + non_gemma_queued:
             try:
                 self._start_job(job)
             except Exception as e:
