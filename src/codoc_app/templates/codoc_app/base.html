@@ -231,13 +231,16 @@
     </div>
     {% endblock %}
 <script>
-// Global: show active job indicator in topbar, auto-refresh non-edit pages
+// Global: show running/queued job indicator in topbar.
+// "active" means running. Queued jobs are pending — separate count.
+// Displaying them as one number lies about what the system is doing.
 (function() {
     function checkActive() {
         fetch('{% url "codoc:queue_status" %}')
             .then(r => r.json())
             .then(data => {
-                const n = data.jobs.filter(j => j.status === 'queued' || j.status === 'running').length;
+                const running = data.jobs.filter(j => j.status === 'running').length;
+                const queued  = data.jobs.filter(j => j.status === 'queued').length;
                 let ind = document.getElementById('active-jobs-indicator');
                 if (!ind) {
                     ind = document.createElement('span');
@@ -245,8 +248,11 @@
                     ind.style.cssText = 'font-size:11px;margin-left:6px';
                     document.querySelector('.topbar-nav a[href*="queue"]').appendChild(ind);
                 }
-                ind.textContent = n > 0 ? ' (' + n + ' active)' : '';
-                ind.style.color = n > 0 ? '#bbf7d0' : '';
+                const parts = [];
+                if (running > 0) parts.push(running + ' active');
+                if (queued > 0)  parts.push(queued + ' queued');
+                ind.textContent = parts.length ? ' (' + parts.join(', ') + ')' : '';
+                ind.style.color = running > 0 ? '#bbf7d0' : (queued > 0 ? '#c7d2fe' : '');
             }).catch(() => {});
     }
     setInterval(checkActive, 5000);

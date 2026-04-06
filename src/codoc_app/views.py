@@ -528,6 +528,16 @@ def queue_status_api(request):
 
     result = []
     for j in jobs:
+        # For running jobs, modified_at is when the worker flipped status
+        # queued→running (worker only saves the Job at start and end, so
+        # modified_at is unambiguous mid-run). For queued jobs no such
+        # transition has happened — leave started_* fields null and let
+        # the UI render '—' instead of lying about elapsed time.
+        started = None
+        started_iso = None
+        if j.status == 'running':
+            started = tz.localtime(j.modified_at).strftime('%b %-d %H:%M')
+            started_iso = j.modified_at.isoformat()
         result.append({
             'id': str(j.id),
             'status': j.status,
@@ -535,6 +545,8 @@ def queue_status_api(request):
             'prompt': j.prompt.content[:80] if j.prompt else j.data.get('prompt_content', '')[:80],
             'created': tz.localtime(j.created_at).strftime('%b %-d %H:%M'),
             'created_iso': j.created_at.isoformat(),
+            'started': started,
+            'started_iso': started_iso,
             'timing': j.data.get('timing'),
             'error': j.data.get('error', '')[:200] if j.data.get('error') else None,
             'page_group_id': j.data.get('result_page_group_id'),

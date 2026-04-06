@@ -34,29 +34,53 @@ function truncate(s, n) { return s.length > n ? s.slice(0, n) + '…' : s; }
 let prevRead = null, prevWrite = null;
 
 function renderQueue(data) {
-    const active = data.jobs.filter(j => j.status === 'queued' || j.status === 'running');
+    const running = data.jobs.filter(j => j.status === 'running');
+    const queued  = data.jobs.filter(j => j.status === 'queued');
     const completed = data.jobs.filter(j => j.status !== 'queued' && j.status !== 'running');
 
-    // Active section
+    // Render one row per active/queued job. For running jobs, "Started"
+    // is when the worker picked it up (started_iso, derived from
+    // modified_at server-side) and "Elapsed" is now - started_iso.
+    // For queued jobs, neither has happened yet — show '—' instead of
+    // counting time since the row was inserted (which would lie about
+    // what the worker is doing).
+    function renderRow(j) {
+        let startedDisplay = '—';
+        let elapsed = '—';
+        if (j.status === 'running') {
+            const startedTs = j.started_iso ? new Date(j.started_iso) : null;
+            if (startedTs) {
+                const secs = Math.floor((Date.now() - startedTs) / 1000);
+                const m = Math.floor(Math.max(0, secs) / 60);
+                const s = Math.max(0, secs) % 60;
+                elapsed = m + ':' + String(s).padStart(2, '0');
+                startedDisplay = j.started || j.created;
+            }
+        }
+        return '<tr><td>' + truncate(j.prompt || '—', 60) + '</td><td>' + j.definition +
+            '</td><td>' + (j.user || '') + '</td><td><span class="status status-' + j.status + '">' + j.status +
+            '</span></td><td>' + startedDisplay + '</td><td>' + elapsed +
+            '</td><td><button class="btn" style="background:#7f1d1d;font-size:11px;padding:2px 8px" onclick="abortJob(\'' + j.id + '\')">Abort</button></td></tr>';
+    }
+
+    function renderTable(rows) {
+        let h = '<table class="queue"><thead><tr><th>Prompt</th><th>Definition</th><th>User</th><th>Status</th><th>Started</th><th>Elapsed</th><th></th></tr></thead><tbody>';
+        rows.forEach(j => { h += renderRow(j); });
+        h += '</tbody></table>';
+        return h;
+    }
+
     let ahtml = '';
-    if (active.length > 0) {
-        ahtml = '<h2>Active <span style="font-size:12px;color:var(--grey)">(live)</span></h2>';
-        ahtml += '<table class="queue"><thead><tr><th>Prompt</th><th>Definition</th><th>User</th><th>Status</th><th>Started</th><th>Elapsed</th><th></th></tr></thead><tbody>';
-        active.forEach(j => {
-            const started = new Date(j.created_iso);
-            const secs = Math.floor((Date.now() - started) / 1000);
-            const m = Math.floor(Math.max(0, secs) / 60);
-            const s = Math.max(0, secs) % 60;
-            const elapsed = m + ':' + String(s).padStart(2, '0');
-            const abortUrl = ABORT_URL.replace('00000000-0000-0000-0000-000000000000', j.id);
-            ahtml += '<tr><td>' + truncate(j.prompt || '—', 60) + '</td><td>' + j.definition +
-                '</td><td>' + (j.user || '') + '</td><td><span class="status status-' + j.status + '">' + j.status +
-                '</span></td><td>' + j.created + '</td><td>' + elapsed +
-                '</td><td><button class="btn" style="background:#7f1d1d;font-size:11px;padding:2px 8px" onclick="abortJob(\'' + j.id + '\')">Abort</button></td></tr>';
-        });
-        ahtml += '</tbody></table>';
-    } else {
-        ahtml = '<p class="empty">No active jobs.</p>';
+    if (running.length > 0) {
+        ahtml += '<h2>Active <span style="font-size:12px;color:var(--grey)">(' + running.length + ' running, live)</span></h2>';
+        ahtml += renderTable(running);
+    }
+    if (queued.length > 0) {
+        ahtml += '<h2>Queued <span style="font-size:12px;color:var(--grey)">(' + queued.length + ' waiting)</span></h2>';
+        ahtml += renderTable(queued);
+    }
+    if (running.length === 0 && queued.length === 0) {
+        ahtml = '<p class="empty">No active or queued jobs.</p>';
     }
     document.getElementById('active-section').innerHTML = ahtml;
 
