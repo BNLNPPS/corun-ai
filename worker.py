@@ -41,7 +41,7 @@ logger = logging.getLogger('corun.worker')
 CLAUDE_PATHS = ['/home/admin/.local/bin/claude', '/usr/local/bin/claude']
 GEMINI_PATHS = ['/home/admin/.nvm/versions/node/v24.13.1/bin/gemini',
                 '/usr/local/bin/gemini']
-DEFAULT_TIMEOUT = 1800  # 30 minutes
+DEFAULT_TIMEOUT = 3600  # 1 hour
 
 
 def _find_claude():
