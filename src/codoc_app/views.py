@@ -273,7 +273,7 @@ def save_prompt_api(request):
         job_def = None
         if definition_id:
             job_def = JobDefinition.objects.filter(id=definition_id).first()
-        job = start_generation(prompt, job_def)
+        job = start_generation(prompt, job_def, triggered_by=request.user)
         return JsonResponse({
             'ok': True, 'action': 'generate',
             'prompt_group_id': str(prompt.group_id),
@@ -295,7 +295,7 @@ def generate_from_prompt(request, group_id):
     job_def = _get_prompt_def(prompt)
 
     from .generate import start_generation
-    job = start_generation(prompt, job_def)
+    job = start_generation(prompt, job_def, triggered_by=request.user)
 
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         return JsonResponse({'ok': True, 'job_id': str(job.id)})
@@ -343,7 +343,7 @@ def prepare_prompt(request):
             jd = None
             if definition_id:
                 jd = JobDefinition.objects.filter(id=definition_id).first()
-            start_generation(prompt, jd)
+            start_generation(prompt, jd, triggered_by=request.user)
             return redirect('codoc:queue')
         else:
             messages.success(request, 'Prompt saved.')
@@ -477,7 +477,9 @@ def queue_status_api(request):
     import subprocess as sp
     from django.utils import timezone as tz
 
-    jobs = Job.objects.select_related('definition', 'prompt__submitted_by').order_by('-created_at')[:50]
+    jobs = Job.objects.select_related(
+        'definition', 'prompt__submitted_by', 'triggered_by',
+    ).order_by('-created_at')[:50]
 
     # Find claude -p processes spawned by the worker
     claude_procs = {}
@@ -550,7 +552,10 @@ def queue_status_api(request):
             'timing': j.data.get('timing'),
             'error': j.data.get('error', '')[:200] if j.data.get('error') else None,
             'page_group_id': j.data.get('result_page_group_id'),
-            'user': j.prompt.submitted_by.username if j.prompt and j.prompt.submitted_by else '',
+            'user': (
+                j.triggered_by.username if j.triggered_by
+                else (j.prompt.submitted_by.username if j.prompt and j.prompt.submitted_by else '')
+            ),
         })
     has_active = any(j['status'] in ('queued', 'running') for j in result)
     return JsonResponse({
@@ -587,7 +592,7 @@ def job_rerun(request, pk):
         return JsonResponse({'error': 'Job has no prompt.'}, status=400)
 
     from .generate import start_generation
-    new_job = start_generation(job.prompt, job.definition)
+    new_job = start_generation(job.prompt, job.definition, triggered_by=request.user)
     return JsonResponse({'ok': True, 'job_id': str(new_job.id)})
 
 

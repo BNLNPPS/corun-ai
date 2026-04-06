@@ -251,6 +251,12 @@ class Job(models.Model):
         JobDefinition, on_delete=models.PROTECT, related_name='jobs')
     prompt = models.ForeignKey(
         Prompt, on_delete=models.SET_NULL, null=True, blank=True, related_name='jobs')
+    triggered_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='triggered_jobs')
+    # Who initiated this run. For original generation this is the same as
+    # prompt.submitted_by; for reruns it's whoever clicked Rerun. Null on
+    # legacy rows — fall back to prompt.submitted_by for display.
     status = models.CharField(max_length=50, default='queued')
     # status values: queued, running, completed, failed, cancelled
     data = models.JSONField(default=dict, blank=True)

@@ -34,8 +34,13 @@ def get_or_create_default_def():
     return job_def
 
 
-def start_generation(prompt, job_def=None):
+def start_generation(prompt, job_def=None, triggered_by=None):
     """Create a queued Job row. The worker daemon picks it up.
+
+    `triggered_by` is the user who initiated this run — same as
+    prompt.submitted_by for original generation, but different for
+    reruns where the rerunning user owns the new run while the prompt
+    keeps its original author.
 
     Returns the Job immediately. The web app never runs claude -p.
     """
@@ -52,6 +57,7 @@ def start_generation(prompt, job_def=None):
     job = Job.objects.create(
         definition=job_def,
         prompt=prompt,
+        triggered_by=triggered_by,
         status='queued',
         data={
             'system_prompt_version': sp_version,
