@@ -10,15 +10,20 @@ import uuid
 from django.conf import settings
 
 # Model registry: (value, label, group). Single source of truth.
+# 'Gemma' models do not run locally — they are dispatched to a remote worker
+# on Torre's Mac Studio via tjai's /api/work/submit endpoint.
 MODEL_CHOICES = [
     ('opus', 'Opus', 'Claude'),
     ('sonnet', 'Sonnet', 'Claude'),
     ('haiku', 'Haiku', 'Claude'),
     ('gemini-2.5-flash', 'Gemini 2.5 Flash', 'Gemini'),
     ('gemini-2.5-pro', 'Gemini 2.5 Pro', 'Gemini'),
+    ('gemma4', 'gemma4', 'Gemma'),
+    ('gemma4-fast', 'gemma4-fast', 'Gemma'),
 ]
 
 GEMINI_MODELS = {m[0] for m in MODEL_CHOICES if m[2] == 'Gemini'}
+GEMMA_MODELS = {m[0] for m in MODEL_CHOICES if m[2] == 'Gemma'}
 
 # Available MCP servers: (key, label, config_dict)
 MCP_SERVERS = {

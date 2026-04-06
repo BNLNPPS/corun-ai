@@ -11,11 +11,14 @@ Usage:
 """
 
 import argparse
+import json
 import logging
 import os
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 import uuid
 
 # Django ORM setup — must happen before importing models
@@ -26,9 +29,12 @@ import django
 django.setup()
 
 import markdown as md_lib
+from django.conf import settings as dj_settings
 from django.utils import timezone
 
-from corun_app.models import AppLog, GEMINI_MODELS, Job, JobDefinition, Page, Prompt, SystemPrompt
+from corun_app.models import (
+    AppLog, GEMINI_MODELS, GEMMA_MODELS, Job, JobDefinition, Page, Prompt, SystemPrompt,
+)
 
 logger = logging.getLogger('corun.worker')
 
@@ -52,6 +58,34 @@ def _find_gemini():
     raise RuntimeError("gemini CLI not found at: " + ", ".join(GEMINI_PATHS))
 
 
+def _tjai_request(method, path, body=None, timeout=15):
+    """Make a request to tjai. Returns the parsed JSON response.
+
+    Raises RuntimeError on non-2xx or transport errors; the caller is
+    expected to fail the job cleanly on any exception.
+    """
+    url = dj_settings.TJAI_BASE_URL.rstrip('/') + path
+    data = None
+    headers = {}
+    if body is not None:
+        data = json.dumps(body).encode('utf-8')
+        headers['Content-Type'] = 'application/json'
+    req = urllib.request.Request(url, data=data, method=method, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read().decode('utf-8')
+            return json.loads(raw) if raw else {}
+    except urllib.error.HTTPError as e:
+        detail = ''
+        try:
+            detail = e.read().decode('utf-8')[:300]
+        except Exception:
+            pass
+        raise RuntimeError(f'tjai {method} {path} HTTP {e.code}: {detail}') from e
+    except urllib.error.URLError as e:
+        raise RuntimeError(f'tjai {method} {path} connection error: {e.reason}') from e
+
+
 def _log(level, message, **kwargs):
     """Log to stderr (supervisord captures) and AppLog."""
     getattr(logger, level)(message)
@@ -69,12 +103,19 @@ def _log(level, message, **kwargs):
 
 
 class RunningJob:
-    """Tracks a running subprocess."""
+    """Tracks a running job.
+
+    For claude/gemini: `process` is the local subprocess, `tjai_entry_id`
+    is None. For gemma: `process` is None (inference runs on a remote Mac),
+    `tjai_entry_id` is the UUID of the tjai work entry being polled.
+    """
     __slots__ = ('job_id', 'prompt_id', 'job_def_id', 'process', 'timeout', 'started',
-                 'use_gemini', 'job_dir')
+                 'use_gemini', 'use_gemma', 'job_dir', 'tjai_entry_id',
+                 'gemma_model', 'next_poll')
 
     def __init__(self, job_id, prompt_id, job_def_id, process, timeout,
-                 use_gemini=False, job_dir=None):
+                 use_gemini=False, job_dir=None, use_gemma=False,
+                 tjai_entry_id=None, gemma_model=None):
         self.job_id = job_id
         self.prompt_id = prompt_id
         self.job_def_id = job_def_id
@@ -82,7 +123,11 @@ class RunningJob:
         self.timeout = timeout
         self.started = time.monotonic()
         self.use_gemini = use_gemini
+        self.use_gemma = use_gemma
         self.job_dir = job_dir
+        self.tjai_entry_id = tjai_entry_id
+        self.gemma_model = gemma_model
+        self.next_poll = 0.0
 
 
 class Worker:
@@ -116,6 +161,14 @@ class Worker:
         for job in Job.objects.filter(status__in=['running', 'queued']):
             _log('warning', f'Orphaned job {job.id} ({job.status}) — marking failed',
                  job_id=str(job.id))
+            # Gemma orphan: best-effort delete of the staged tjai entry.
+            tjai_entry_id = job.data.get('tjai_entry_id') if job.data else None
+            if tjai_entry_id:
+                try:
+                    _tjai_request(
+                        'DELETE', f'/api/work/result/{tjai_entry_id}')
+                except Exception:
+                    pass
             job.status = 'failed'
             job.data = {**job.data, 'error': 'Worker restarted — job was orphaned'}
             job.save(update_fields=['status', 'data', 'modified_at'])
@@ -200,7 +253,35 @@ class Worker:
                 with open(os.path.join(job_dir, '.mcp.json'), 'w') as f:
                     _json.dump({'mcpServers': mcp_conf}, f)
 
-        if model in GEMINI_MODELS:
+        use_gemini = False
+        use_gemma = False
+        cmd = None
+        if model in GEMMA_MODELS:
+            # Remote dispatch via tjai — no local subprocess.
+            # The prompt is the system prompt plus user content combined,
+            # matching the pattern used for gemini (ollama has no separate
+            # system-prompt flag that we use here).
+            combined = (
+                f"SYSTEM INSTRUCTIONS (follow these for all responses):\n"
+                f"{system_prompt.content}\n\n"
+                f"USER REQUEST:\n{prompt.content}"
+            )
+            resp = _tjai_request('POST', '/api/work/submit', body={
+                'capability': model,
+                'prompt': combined,
+                'timeout_sec': timeout,
+                'source': 'corun-ai',
+                'label': f'codoc:{job_def.name}:{str(job.id)[:8]}',
+            })
+            tjai_entry_id = resp.get('entry_id')
+            if not tjai_entry_id:
+                raise RuntimeError(f'tjai /api/work/submit returned no entry_id: {resp}')
+            use_gemma = True
+            _log('info',
+                 f'Gemma job {job.id} staged on tjai entry {tjai_entry_id} '
+                 f'(model={model})',
+                 job_id=str(job.id), tjai_entry_id=tjai_entry_id)
+        elif model in GEMINI_MODELS:
             gemini_path = _find_gemini()
             combined = (
                 f"SYSTEM INSTRUCTIONS (follow these for all responses):\n"
@@ -223,7 +304,6 @@ class Worker:
                 '--output-format', 'text',
                 '--model', model,
             ]
-            use_gemini = False
 
         env = {
             'HOME': '/home/admin',
@@ -236,27 +316,32 @@ class Worker:
         }
 
         job.status = 'running'
-        job.data = {**job.data,
-                    'system_prompt_version': system_prompt.version,
-                    'prompt_content': prompt.content,
-                    }
+        job_data_update = {
+            'system_prompt_version': system_prompt.version,
+            'prompt_content': prompt.content,
+        }
+        if use_gemma:
+            job_data_update['tjai_entry_id'] = tjai_entry_id
+        job.data = {**job.data, **job_data_update}
         job.save(update_fields=['status', 'data', 'modified_at'])
 
         prompt.status = 'generating'
         prompt.save(update_fields=['status', 'modified_at'])
 
-        proc = subprocess.Popen(
-            cmd,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            env=env,
-            cwd=job_dir,
-        )
-        if not use_gemini:
-            proc.stdin.write(prompt.content)
-        proc.stdin.close()
+        proc = None
+        if not use_gemma:
+            proc = subprocess.Popen(
+                cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=env,
+                cwd=job_dir,
+            )
+            if not use_gemini:
+                proc.stdin.write(prompt.content)
+            proc.stdin.close()
 
         self.running[str(job.id)] = RunningJob(
             job_id=str(job.id),
@@ -265,7 +350,10 @@ class Worker:
             process=proc,
             timeout=timeout,
             use_gemini=use_gemini,
+            use_gemma=use_gemma,
             job_dir=job_dir if use_gemini else None,
+            tjai_entry_id=tjai_entry_id if use_gemma else None,
+            gemma_model=model if use_gemma else None,
         )
 
         _log('info',
@@ -282,21 +370,95 @@ class Worker:
                 job = Job.objects.get(id=job_id)
                 if job.status == 'cancelled':
                     _log('info', f'Aborting job {job_id}', job_id=job_id)
-                    try:
-                        rj.process.terminate()
-                        rj.process.wait(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        rj.process.kill()
-                    except Exception:
-                        pass
+                    if rj.use_gemma:
+                        # Soft-delete the tjai entry so the worker stops
+                        # processing it (if still queued) and does not leak.
+                        # If the Mac is mid-inference it will still finish,
+                        # but its result POST will 404 and be dropped.
+                        try:
+                            _tjai_request(
+                                'DELETE',
+                                f'/api/work/result/{rj.tjai_entry_id}',
+                            )
+                        except Exception as e:
+                            _log('warning',
+                                 f'Failed to DELETE tjai entry {rj.tjai_entry_id}: {e}',
+                                 job_id=job_id)
+                    else:
+                        try:
+                            rj.process.terminate()
+                            rj.process.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            rj.process.kill()
+                        except Exception:
+                            pass
                     self._finish_job(rj, 'cancelled', 'Aborted by user')
                     continue
             except Job.DoesNotExist:
-                try:
-                    rj.process.kill()
-                except Exception:
-                    pass
+                if rj.use_gemma:
+                    try:
+                        _tjai_request(
+                            'DELETE',
+                            f'/api/work/result/{rj.tjai_entry_id}',
+                        )
+                    except Exception:
+                        pass
+                else:
+                    try:
+                        rj.process.kill()
+                    except Exception:
+                        pass
                 del self.running[job_id]
+                continue
+
+            # Gemma: poll tjai for result
+            if rj.use_gemma:
+                now = time.monotonic()
+                if now < rj.next_poll:
+                    continue
+                rj.next_poll = now + 2.0  # poll every 2s
+                try:
+                    state = _tjai_request(
+                        'GET', f'/api/work/result/{rj.tjai_entry_id}')
+                except Exception as e:
+                    _log('warning',
+                         f'Gemma poll failed for job {job_id}: {e}',
+                         job_id=job_id)
+                    # On timeout of the overall job, fail below; otherwise keep polling
+                    if time.monotonic() - rj.started > rj.timeout:
+                        self._finish_job(
+                            rj, 'failed',
+                            f'Gemma polling error after {rj.timeout}s: {e}')
+                    continue
+
+                status = state.get('status')
+                if status == 'done':
+                    content = (state.get('result') or '').strip()
+                    elapsed = time.monotonic() - rj.started
+                    if content:
+                        self._complete_job(rj, content, elapsed)
+                    else:
+                        self._finish_job(
+                            rj, 'failed', 'Gemma returned empty result')
+                    continue
+                if status == 'failed':
+                    err = state.get('error') or 'unknown error'
+                    self._finish_job(rj, 'failed', f'Gemma failed: {err[:300]}')
+                    continue
+
+                # Still queued/running — check overall timeout
+                elapsed = time.monotonic() - rj.started
+                if elapsed > rj.timeout:
+                    _log('warning',
+                         f'Gemma job {job_id} timed out after {elapsed:.0f}s',
+                         job_id=job_id)
+                    try:
+                        _tjai_request(
+                            'DELETE',
+                            f'/api/work/result/{rj.tjai_entry_id}')
+                    except Exception:
+                        pass
+                    self._finish_job(rj, 'failed', f'Timed out after {rj.timeout}s')
                 continue
 
             # Completed?
@@ -410,6 +572,17 @@ class Worker:
             self._finish_job(rj, 'failed', f'Result save error: {e}')
             return
 
+        # Release the tjai work entry after successful ingestion. Best-effort:
+        # a failure here only leaves a soft-deletable stray entry behind.
+        if rj.use_gemma and rj.tjai_entry_id:
+            try:
+                _tjai_request(
+                    'DELETE', f'/api/work/result/{rj.tjai_entry_id}')
+            except Exception as e:
+                _log('warning',
+                     f'Failed to DELETE tjai entry {rj.tjai_entry_id} after success: {e}',
+                     job_id=rj.job_id)
+
         del self.running[rj.job_id]
 
     def _finish_job(self, rj, status, error):
@@ -425,6 +598,15 @@ class Worker:
         except Exception as e:
             _log('error', f'Failed to update job {rj.job_id} status: {e}',
                  job_id=rj.job_id)
+
+        # Best-effort tjai entry cleanup on any gemma failure/cancel path
+        # that didn't already delete it.
+        if rj.use_gemma and rj.tjai_entry_id:
+            try:
+                _tjai_request(
+                    'DELETE', f'/api/work/result/{rj.tjai_entry_id}')
+            except Exception:
+                pass
 
         _log('info' if status == 'cancelled' else 'error',
              f'Job {rj.job_id} {status}: {error}', job_id=rj.job_id)

@@ -672,14 +672,19 @@ def definition_fragment(request, pk):
     if sp_gid:
         sp = SystemPrompt.objects.filter(group_id=sp_gid, is_current=True).first()
     sysprompts = SystemPrompt.objects.filter(is_current=True)
-    from corun_app.models import GEMINI_MODELS, MCP_SERVERS
+    from corun_app.models import GEMINI_MODELS, GEMMA_MODELS, MCP_SERVERS
     # Resolve MCP tool keys to labels
     mcp_tools = d.data.get('mcp_tools', [])
     d.data['mcp_tools_display'] = ', '.join(
         MCP_SERVERS[k]['label'] for k in mcp_tools if k in MCP_SERVERS
     ) or 'None'
     model = d.data.get('model', 'sonnet')
-    if model in GEMINI_MODELS:
+    if model in GEMMA_MODELS:
+        d.data['cli_preview'] = (
+            f'POST tjai /api/work/submit {{capability:{model}}} '
+            f'→ remote Mac ollama ({model})'
+        )
+    elif model in GEMINI_MODELS:
         d.data['cli_preview'] = f'gemini -m {model} --yolo -p "<prompt>"'
     else:
         d.data['cli_preview'] = f'claude -p --model {model} --system-prompt "..." --output-format text'
