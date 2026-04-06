@@ -13,7 +13,7 @@
         {% if user.is_authenticated %}
         <div style="display:flex;gap:6px;margin-left:12px">
             {% if page.data.job_id %}
-            <button class="btn" style="background:#1e40af;font-size:11px;padding:2px 8px" onclick="resubmitPage('{{ page.data.job_id }}')" title="Resubmit the same prompt to the same definition — creates a new job in the queue">Resubmit</button>
+            <button class="btn" style="font-size:11px;padding:2px 8px" onclick="resubmitPage('{{ page.data.job_id }}')" title="Resubmit the same prompt to the same definition — creates a new job in the queue">Resubmit</button>
             {% endif %}
             <button class="btn" style="background:#7f1d1d;font-size:11px;padding:2px 8px" onclick="deletePage('{{ page.group_id }}')">Delete</button>
         </div>
