@@ -106,11 +106,10 @@ function renderQueue(data) {
                 const ts = Math.round(j.timing);
                 timing = ts < 60 ? '<br>' + ts + 's' : '<br>' + Math.floor(ts/60) + 'm ' + (ts%60) + 's';
             }
-            let completedPromptCell = truncate(j.prompt || '—', 60);
             if (j.commented) {
-                completedPromptCell += '<div style="color:var(--accent);font-size:11px;margin-top:2px">Commented</div>';
+                result += '<div style="color:var(--accent);font-size:11px;margin-top:2px">Commented</div>';
             }
-            chtml += '<tr><td>' + completedPromptCell + '</td><td>' + j.definition +
+            chtml += '<tr><td>' + truncate(j.prompt || '—', 60) + '</td><td>' + j.definition +
                 '</td><td>' + (j.user || '') + '</td><td><span class="status status-' + j.status + '">' + j.status +
                 '</span></td><td>' + j.created + timing + '</td><td>' + result +
                 '</td><td>' +

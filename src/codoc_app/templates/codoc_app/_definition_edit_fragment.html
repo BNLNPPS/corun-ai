@@ -35,7 +35,7 @@
             </div>
             <div style="flex:1">
                 <label style="display:block;font-size:12px;color:var(--grey);margin-bottom:4px">Timeout (min)</label>
-                <input type="number" name="timeout_min" min="1" max="480" value="{% widthratio definition.data.timeout_s|default:1800 60 1 %}"
+                <input type="number" name="timeout_min" min="1" max="480" value="{% widthratio definition.data.timeout_s|default:3600 60 1 %}"
                     style="width:100%;font-size:13px;padding:6px 10px;border:1px solid var(--border);border-radius:4px;background:var(--card-bg);color:var(--text)"
                     id="timeout-min-input">
             </div>

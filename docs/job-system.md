@@ -73,7 +73,7 @@ Each `claude -p` subprocess runs with:
 
 ### Timeout
 
-Default: 5 minutes (300s). Configurable per JobDefinition via `data.timeout_s`.
+Default: 60 minutes (3600s). Configurable per JobDefinition via `data.timeout_s`.
 
 ### Logging
 

@@ -36,8 +36,8 @@
 {% endif %}
 
 <!-- Comments -->
-<div style="margin-top:24px;border-top:1px solid var(--border);padding-top:16px">
-    <h3 style="font-size:13px;color:var(--accent);margin-bottom:12px">Comments ({{ comments|length }})</h3>
+<h2 style="font-size:1.4em;font-weight:600;color:var(--accent);margin-top:20px;margin-bottom:6px">Comments ({{ comments|length }})</h2>
+<div>
 
     {% if user.is_authenticated %}
     <form id="page-comment-form" onsubmit="return false;" style="margin-bottom:16px">

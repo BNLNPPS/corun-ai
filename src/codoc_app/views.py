@@ -802,7 +802,7 @@ def definition_edit(request, pk=None):
         effort = request.POST.get('effort', 'high')
         sp_group_id = request.POST.get('system_prompt_group_id', '')
         mcp_tools = request.POST.getlist('mcp_tools')
-        timeout_min = request.POST.get('timeout_min', '30')
+        timeout_min = request.POST.get('timeout_min', '60')
 
         if not name:
             return JsonResponse({'error': 'Name is required.'}, status=400)
@@ -810,7 +810,7 @@ def definition_edit(request, pk=None):
         try:
             timeout_s = int(float(timeout_min)) * 60
         except (ValueError, TypeError):
-            timeout_s = 1800
+            timeout_s = 3600
 
         # Gemma models have a fixed MCP set wired into the Mac-side runner;
         # anything the client sent is discarded.
