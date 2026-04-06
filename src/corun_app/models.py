@@ -25,6 +25,13 @@ MODEL_CHOICES = [
 GEMINI_MODELS = {m[0] for m in MODEL_CHOICES if m[2] == 'Gemini'}
 GEMMA_MODELS = {m[0] for m in MODEL_CHOICES if m[2] == 'Gemma'}
 
+# Gemma jobs run on Torre's Mac Studio via the tjai remote-worker pipeline.
+# The Mac has `lxr` and `github` MCPs always available to the ollama runner;
+# other MCPs from MCP_SERVERS are not reachable from the Mac side. The codoc
+# definition UI reflects this by locking the MCP tool selection to exactly
+# these two (ticked, not editable) whenever the model is a Gemma model.
+GEMMA_FIXED_MCP_TOOLS = ['lxr', 'github']
+
 # Available MCP servers: (key, label, config_dict)
 MCP_SERVERS = {
     'lxr': {

@@ -15,7 +15,7 @@
         <div style="display:flex;gap:12px;margin-bottom:12px">
             <div style="flex:1">
                 <label style="display:block;font-size:12px;color:var(--grey);margin-bottom:4px">Model</label>
-                <select name="model" style="width:100%;font-size:13px;padding:6px 10px;border:1px solid var(--border);border-radius:4px;background:var(--card-bg);color:var(--text)">
+                <select name="model" id="model-select" onchange="updateMcpToolsForModel()" style="width:100%;font-size:13px;padding:6px 10px;border:1px solid var(--border);border-radius:4px;background:var(--card-bg);color:var(--text)">
                     {% for group_name, group_models in model_groups %}
                     <optgroup label="{{ group_name }}">
                     {% for value, label in group_models %}
@@ -41,10 +41,10 @@
             </div>
         </div>
 
-        <label style="display:block;font-size:12px;color:var(--grey);margin-bottom:4px">MCP Tools</label>
-        <div style="margin-bottom:12px">
+        <label id="mcp-tools-label" style="display:block;font-size:12px;color:var(--grey);margin-bottom:4px">MCP Tools</label>
+        <div id="mcp-tools-container" style="margin-bottom:12px">
             {% for key, label in mcp_choices %}
-            <label style="display:inline;font-size:13px;color:var(--text);margin-right:16px">
+            <label class="mcp-tool-label" data-mcp-key="{{ key }}" style="display:inline;font-size:13px;color:var(--text);margin-right:16px">
                 <input type="checkbox" name="mcp_tools" value="{{ key }}" {% if definition and key in definition.data.mcp_tools %}checked{% elif not definition and key == 'lxr' %}checked{% endif %}> {{ label }}
             </label>
             {% endfor %}
@@ -70,6 +70,9 @@
 
 <script>
 var _spContents = JSON.parse('{{ sp_contents_json|escapejs }}');
+var _gemmaModels = JSON.parse('{{ gemma_models_json|escapejs }}');
+var _gemmaFixedMcp = JSON.parse('{{ gemma_fixed_mcp_json|escapejs }}');
+
 function updateSpPreview() {
     var sel = document.getElementById('sp-select');
     var gid = sel.value;
@@ -77,6 +80,48 @@ function updateSpPreview() {
     el.textContent = _spContents[gid] || '';
 }
 updateSpPreview();
+
+function updateMcpToolsForModel() {
+    var modelSel = document.getElementById('model-select');
+    var isGemma = modelSel && _gemmaModels.indexOf(modelSel.value) >= 0;
+    var labelEl = document.getElementById('mcp-tools-label');
+    var container = document.getElementById('mcp-tools-container');
+    if (!container) return;
+
+    // Toggle the section heading to make the constraint visible.
+    if (labelEl) {
+        labelEl.textContent = isGemma
+            ? 'MCP Tools (fixed for Gemma — configured on remote worker)'
+            : 'MCP Tools';
+    }
+
+    container.querySelectorAll('label.mcp-tool-label').forEach(function(lbl) {
+        var key = lbl.getAttribute('data-mcp-key');
+        var cb = lbl.querySelector('input[type=checkbox]');
+        if (!cb) return;
+        if (isGemma) {
+            var isFixed = _gemmaFixedMcp.indexOf(key) >= 0;
+            if (isFixed) {
+                cb.checked = true;
+                cb.disabled = true;
+                lbl.style.display = '';
+                lbl.style.opacity = '0.75';
+                lbl.title = 'Always on for Gemma models (configured on remote worker)';
+            } else {
+                // Hide non-applicable tools entirely to keep the UI honest.
+                cb.checked = false;
+                cb.disabled = true;
+                lbl.style.display = 'none';
+            }
+        } else {
+            cb.disabled = false;
+            lbl.style.display = '';
+            lbl.style.opacity = '';
+            lbl.title = '';
+        }
+    });
+}
+updateMcpToolsForModel();
 
 function deleteDef(defId) {
     if (!confirm('Delete this definition?')) return;

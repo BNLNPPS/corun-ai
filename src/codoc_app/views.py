@@ -679,6 +679,7 @@ def definition_fragment(request, pk):
         MCP_SERVERS[k]['label'] for k in mcp_tools if k in MCP_SERVERS
     ) or 'None'
     model = d.data.get('model', 'sonnet')
+    d.data['is_gemma'] = model in GEMMA_MODELS
     if model in GEMMA_MODELS:
         d.data['cli_preview'] = (
             f'POST tjai /api/work/submit {{capability:{model}}} '
@@ -703,6 +704,7 @@ def definition_edit(request, pk=None):
         d = None
 
     if request.method == 'POST':
+        from corun_app.models import GEMMA_MODELS, GEMMA_FIXED_MCP_TOOLS
         name = request.POST.get('name', '').strip()
         description = request.POST.get('description', '').strip()
         model = request.POST.get('model', 'sonnet')
@@ -719,10 +721,17 @@ def definition_edit(request, pk=None):
         except (ValueError, TypeError):
             timeout_s = 1800
 
+        # Gemma models have a fixed MCP set wired into the Mac-side runner;
+        # anything the client sent is discarded.
+        if model in GEMMA_MODELS:
+            effective_mcp_tools = list(GEMMA_FIXED_MCP_TOOLS)
+        else:
+            effective_mcp_tools = mcp_tools or ['lxr', 'github']
+
         data = {
             'model': model,
             'effort': effort,
-            'mcp_tools': mcp_tools or ['lxr', 'github'],
+            'mcp_tools': effective_mcp_tools,
             'timeout_s': timeout_s,
         }
         if sp_group_id:
@@ -749,7 +758,9 @@ def definition_edit(request, pk=None):
             sp = SystemPrompt.objects.filter(group_id=sp_gid, is_current=True).first()
             if sp:
                 current_sp_content = sp.content
-    from corun_app.models import MODEL_CHOICES, MCP_SERVERS
+    from corun_app.models import (
+        MODEL_CHOICES, MCP_SERVERS, GEMMA_MODELS, GEMMA_FIXED_MCP_TOOLS,
+    )
     from collections import OrderedDict
     _mg = OrderedDict()
     for value, label, group in MODEL_CHOICES:
@@ -761,6 +772,8 @@ def definition_edit(request, pk=None):
         'current_sp_content': current_sp_content,
         'model_groups': model_groups,
         'mcp_choices': [(k, v['label']) for k, v in MCP_SERVERS.items()],
+        'gemma_models_json': json.dumps(sorted(GEMMA_MODELS)),
+        'gemma_fixed_mcp_json': json.dumps(list(GEMMA_FIXED_MCP_TOOLS)),
         'sp_contents_json': json.dumps(sp_contents),
     }, request=request)
     return HttpResponse(html)
