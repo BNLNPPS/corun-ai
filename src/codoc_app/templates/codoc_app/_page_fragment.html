@@ -11,7 +11,12 @@
             · <a href="{% url 'codoc:page' page.group_id %}">permalink</a>
         </div>
         {% if user.is_authenticated %}
-        <button class="btn" style="background:#7f1d1d;font-size:11px;padding:2px 8px;margin-left:12px" onclick="deletePage('{{ page.group_id }}')">Delete</button>
+        <div style="display:flex;gap:6px;margin-left:12px">
+            {% if page.data.job_id %}
+            <button class="btn" style="background:#1e40af;font-size:11px;padding:2px 8px" onclick="resubmitPage('{{ page.data.job_id }}')" title="Resubmit the same prompt to the same definition — creates a new job in the queue">Resubmit</button>
+            {% endif %}
+            <button class="btn" style="background:#7f1d1d;font-size:11px;padding:2px 8px" onclick="deletePage('{{ page.group_id }}')">Delete</button>
+        </div>
         {% endif %}
     </div>
 
@@ -129,5 +134,15 @@ function deletePage(groupId) {
         if (data.ok) { window.location.reload(); }
         else { alert(data.error || 'Delete failed'); }
     }).catch(err => alert('Delete failed: ' + err));
+}
+function resubmitPage(jobId) {
+    if (!confirm('Resubmit the same prompt to the same definition?\n\nA new job will be queued.')) return;
+    fetch('{% url "codoc:job_rerun" "00000000-0000-0000-0000-000000000000" %}'.replace('00000000-0000-0000-0000-000000000000', jobId), {
+        method: 'POST',
+        headers: {'X-CSRFToken': '{{ csrf_token }}'},
+    }).then(r => r.json()).then(data => {
+        if (data.ok) { window.location.href = '{% url "codoc:queue" %}'; }
+        else { alert(data.error || 'Resubmit failed'); }
+    }).catch(err => alert('Resubmit failed: ' + err));
 }
 </script>
