@@ -32,14 +32,14 @@ label { display: block; font-size: 13px;
 <h1>Prepare Prompt</h1>
 <p class="subtitle">Claude will use LXR and GitHub to generate documentation grounded in actual code.</p>
 
-{% if sysprompt %}
-<div class="config-summary">
-    System prompt: <a href="{% url 'codoc:sysprompt' sysprompt.group_id %}">{{ sysprompt.name }} v{{ sysprompt.version }}</a>
-    {% if job_def.data.mcp_tools %} · Tools: {{ job_def.data.mcp_tools|join:", " }}{% endif %}
-    {% if job_def.data.model %} · Model: {{ job_def.data.model }}{% endif %}
-    · <a href="{% url 'codoc:config' %}">Config</a>
+<div class="config-summary" id="config-summary">
+    <span id="cs-sysprompt">
+        {% if sysprompt %}System prompt: <a id="cs-sp-link" href="{% url 'codoc:sysprompts' %}?id={{ sysprompt.group_id }}">{{ sysprompt.name }} v{{ sysprompt.version }}</a>{% endif %}
+    </span>
+    <span id="cs-tools">{% if job_def.data.mcp_tools %} · Tools: {{ job_def.data.mcp_tools|join:", " }}{% endif %}</span>
+    <span id="cs-model">{% if job_def.data.model %} · Model: {{ job_def.data.model }}{% endif %}</span>
+    · <a href="{% url 'codoc:definitions' %}">Definitions</a>
 </div>
-{% endif %}
 
 {% if messages %}
 <div class="messages">
@@ -52,12 +52,27 @@ label { display: block; font-size: 13px;
     <label for="section">Section</label>
     <select name="section" id="section" required>
         {% for sec in sections %}
-        <option value="{{ sec.id }}">{{ sec.title|default:sec.name }}</option>
+        <option value="{{ sec.id }}"{% if prefill.section_id == sec.id|stringformat:"s" %} selected{% endif %}>{{ sec.display_label }}</option>
         {% endfor %}
     </select>
 
+    <label for="definition">Definition (model + sysprompt + tools)</label>
+    <select name="definition" id="definition">
+        <option value="">— default —</option>
+        {% for d in definitions %}
+        <option value="{{ d.id }}"
+                data-model="{{ d.display_model }}"
+                data-tools="{{ d.display_tools }}"
+                data-sp-name="{{ d.display_sp_name }}"
+                data-sp-version="{{ d.display_sp_version }}"
+                data-sp-url="{% if d.display_sp_group %}{% url 'codoc:sysprompts' %}?id={{ d.display_sp_group }}{% endif %}"
+                {% if prefill.definition_id == d.id|stringformat:"s" %} selected{% endif %}>{{ d.display_label }}</option>
+        {% endfor %}
+    </select>
+    <div class="hint">Changing the definition swaps the model and system prompt for this run.</div>
+
     <label for="content">Prompt</label>
-    <textarea name="content" id="content" required placeholder="e.g. Explain the CalorimeterHitDigi algorithm in EICrecon — cover the main class, its configuration parameters, and the digitization pipeline.">{{ request.POST.content }}</textarea>
+    <textarea name="content" id="content" required placeholder="e.g. Explain the CalorimeterHitDigi algorithm in EICrecon — cover the main class, its configuration parameters, and the digitization pipeline.">{{ prefill.content }}</textarea>
     <div class="hint">Be specific about what code, algorithms, or systems you want documented.</div>
 
     <div class="btn-row">
@@ -78,5 +93,30 @@ document.getElementById('prepare-form').addEventListener('submit', function(e) {
         document.getElementById('generating').style.display = 'block';
     }
 });
+
+// Live-update the config summary when the definition changes.
+(function() {
+    const defSel = document.getElementById('definition');
+    if (!defSel) return;
+    const spEl = document.getElementById('cs-sysprompt');
+    const toolsEl = document.getElementById('cs-tools');
+    const modelEl = document.getElementById('cs-model');
+    function refresh() {
+        const opt = defSel.options[defSel.selectedIndex];
+        if (!opt || !opt.value) return;  // default — leave rendered defaults
+        const spName = opt.dataset.spName || '';
+        const spVer = opt.dataset.spVersion || '';
+        const spUrl = opt.dataset.spUrl || '';
+        const tools = opt.dataset.tools || '';
+        const model = opt.dataset.model || '';
+        spEl.innerHTML = spName && spUrl
+            ? `System prompt: <a href="${spUrl}">${spName} v${spVer}</a>`
+            : '';
+        toolsEl.textContent = tools ? ` · Tools: ${tools}` : '';
+        modelEl.textContent = model ? ` · Model: ${model}` : '';
+    }
+    defSel.addEventListener('change', refresh);
+    refresh();  // on load, reflect any prefill
+})();
 </script>
 {% endblock %}

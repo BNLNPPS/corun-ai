@@ -344,6 +344,15 @@ class Worker:
                 '--output-format', 'text',
                 '--model', model,
             ]
+            # Wire up the MCP tools the definition selected. Without these
+            # flags claude -p cannot call any MCP tool — it silently falls
+            # back to reasoning without data. Path is relative to cwd=job_dir
+            # (where .mcp.json was just written above).
+            if mcp_tools and mcp_conf:
+                cmd += [
+                    '--mcp-config', '.mcp.json',
+                    '--allowedTools', 'mcp__*',
+                ]
 
         env = {
             'HOME': '/home/admin',

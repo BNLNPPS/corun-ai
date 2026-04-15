@@ -306,15 +306,68 @@ def generate_from_prompt(request, group_id):
 
 @login_required
 def prepare_prompt(request):
-    """Standalone prepare prompt page."""
-    sections = Section.objects.filter(status='active').order_by('data__sort_order', 'name')
-    definitions = JobDefinition.objects.filter(status='active')
+    """Standalone prepare prompt page.
+
+    GET ?source_job=<uuid> — pre-fill from an existing job's prompt and
+    definition so a user can Resubmit via this panel and change the
+    sysprompt / model before actually generating.
+    """
+    # Show all sections/definitions (not just active) so resubmit from an
+    # archived/inactive one still surfaces the real choice — marked visibly
+    # as inactive. Order: active first, then everything else.
+    from django.db.models import Case, When, IntegerField, Value
+    sections = list(Section.objects.annotate(
+        _rank=Case(When(status='active', then=Value(0)),
+                   default=Value(1), output_field=IntegerField()),
+    ).order_by('_rank', 'data__sort_order', 'name'))
+    for sec in sections:
+        sec.display_label = sec.title or sec.name
+        if sec.status != 'active':
+            sec.display_label = f"{sec.display_label} ({sec.status})"
+
+    definitions = list(JobDefinition.objects.annotate(
+        _rank=Case(When(status='active', then=Value(0)),
+                   default=Value(1), output_field=IntegerField()),
+    ).order_by('_rank', 'name'))
     from .generate import get_or_create_default_def
     job_def = get_or_create_default_def()
+
+    # Attach a summary of each definition's sysprompt for the live-updating
+    # config summary in the template.
+    sp_groups = {d.data.get('system_prompt_group_id') for d in definitions if d.data.get('system_prompt_group_id')}
+    sysprompt_by_group = {
+        sp.group_id: sp for sp in
+        SystemPrompt.objects.filter(group_id__in=sp_groups, is_current=True)
+    }
+    for d in definitions:
+        sp = sysprompt_by_group.get(d.data.get('system_prompt_group_id'))
+        d.display_model = d.data.get('model', '')
+        d.display_tools = ', '.join(d.data.get('mcp_tools', []) or [])
+        d.display_sp_name = sp.name if sp else ''
+        d.display_sp_version = sp.version if sp else ''
+        d.display_sp_group = str(sp.group_id) if sp else ''
+        d.display_label = d.name if d.status == 'active' else f"{d.name} ({d.status})"
+
+    # Default sysprompt for the top-of-page config summary (no def selected yet).
     sysprompt = None
     sp_gid = job_def.data.get('system_prompt_group_id')
     if sp_gid:
         sysprompt = SystemPrompt.objects.filter(group_id=sp_gid, is_current=True).first()
+
+    # Pre-fill context (GET only; POST uses request.POST values directly).
+    prefill = {'section_id': '', 'content': '', 'definition_id': ''}
+    if request.method == 'GET':
+        source_job_id = request.GET.get('source_job', '').strip()
+        if source_job_id:
+            src = Job.objects.filter(id=source_job_id).select_related(
+                'prompt', 'prompt__section', 'definition',
+            ).first()
+            if src and src.prompt:
+                prefill = {
+                    'section_id': str(src.prompt.section_id),
+                    'content': src.prompt.content,
+                    'definition_id': str(src.definition_id),
+                }
 
     if request.method == 'POST':
         section_id = request.POST.get('section')
@@ -327,6 +380,11 @@ def prepare_prompt(request):
             return render(request, 'codoc_app/prepare.html', {
                 'sections': sections, 'definitions': definitions,
                 'sysprompt': sysprompt, 'job_def': job_def,
+                'prefill': {
+                    'section_id': section_id or '',
+                    'content': content,
+                    'definition_id': definition_id,
+                },
             })
 
         sec = get_object_or_404(Section, id=section_id)
@@ -352,6 +410,7 @@ def prepare_prompt(request):
     return render(request, 'codoc_app/prepare.html', {
         'sections': sections, 'definitions': definitions,
         'sysprompt': sysprompt, 'job_def': job_def,
+        'prefill': prefill,
     })
 
 
