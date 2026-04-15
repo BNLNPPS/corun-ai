@@ -113,7 +113,7 @@ function renderQueue(data) {
                 '</td><td>' + (j.user || '') + '</td><td><span class="status status-' + j.status + '">' + j.status +
                 '</span></td><td>' + j.created + timing + '</td><td>' + result +
                 '</td><td>' +
-                '<a class="btn" style="background:#14532d;font-size:11px;padding:2px 8px;margin-right:16px;text-decoration:none;display:inline-block" href="' + PREPARE_URL + '?source_job=' + j.id + '" title="Open the setup panel pre-filled from this job — change sysprompt or model before resubmitting">Resubmit</a>' +
+                '<a class="btn" style="background:#14532d;font-size:11px;padding:2px 8px;margin-right:16px;text-decoration:none;display:inline-block" href="' + PREPARE_URL + '?source_job=' + j.id + '" title="Open the setup panel pre-filled from this job — change sysprompt or model before rerunning">Rerun</a>' +
                 '<span style="color:#c44;cursor:pointer;font-size:16px" onclick="deleteJob(\'' + j.id + '\')" title="Delete">✕</span></td></tr>';
         });
         chtml += '</tbody></table>';
