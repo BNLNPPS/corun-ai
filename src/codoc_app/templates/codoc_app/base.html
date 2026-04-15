@@ -226,6 +226,11 @@
     <div class="page">
         <div class="main">
             {% block nav %}{% endblock %}
+            {% if messages %}
+            <div class="messages">
+                {% for msg in messages %}<div class="{{ msg.tags }}">{{ msg }}</div>{% endfor %}
+            </div>
+            {% endif %}
             {% block body %}{% endblock %}
         </div>
     </div>
