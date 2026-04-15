@@ -19,7 +19,7 @@
 <script>
 const PAGE_URL = '{% url "codoc:page" "00000000-0000-0000-0000-000000000000" %}';
 const ABORT_URL = '{% url "codoc:job_abort" "00000000-0000-0000-0000-000000000000" %}';
-const RERUN_URL = '{% url "codoc:job_rerun" "00000000-0000-0000-0000-000000000000" %}';
+const PREPARE_URL = '{% url "codoc:prepare" %}';
 const DELETE_URL = '{% url "codoc:job_delete" "00000000-0000-0000-0000-000000000000" %}';
 const CSRF = '{{ csrf_token }}';
 
@@ -113,7 +113,7 @@ function renderQueue(data) {
                 '</td><td>' + (j.user || '') + '</td><td><span class="status status-' + j.status + '">' + j.status +
                 '</span></td><td>' + j.created + timing + '</td><td>' + result +
                 '</td><td>' +
-                '<button class="btn" style="background:#14532d;font-size:11px;padding:2px 8px;margin-right:16px" onclick="rerunJob(\'' + j.id + '\')">Rerun</button>' +
+                '<a class="btn" style="background:#14532d;font-size:11px;padding:2px 8px;margin-right:16px;text-decoration:none;display:inline-block" href="' + PREPARE_URL + '?source_job=' + j.id + '" title="Open the setup panel pre-filled from this job — change sysprompt or model before resubmitting">Resubmit</a>' +
                 '<span style="color:#c44;cursor:pointer;font-size:16px" onclick="deleteJob(\'' + j.id + '\')" title="Delete">✕</span></td></tr>';
         });
         chtml += '</tbody></table>';
@@ -154,30 +154,6 @@ function abortJob(id) {
     fetch(ABORT_URL.replace('00000000-0000-0000-0000-000000000000', id), {
         method: 'POST', headers: {'X-CSRFToken': CSRF},
     }).then(r => r.json()).then(() => pollQueue());
-}
-
-function rerunJob(id) {
-    doRerun(id, null);
-}
-function doRerun(id, spVersion) {
-    var formData = new FormData();
-    formData.set('csrfmiddlewaretoken', CSRF);
-    if (spVersion !== null) formData.set('sp_version', spVersion);
-    fetch(RERUN_URL.replace('00000000-0000-0000-0000-000000000000', id), {
-        method: 'POST', body: formData, headers: {'X-CSRFToken': CSRF},
-    }).then(r => r.json()).then(data => {
-        if (data && data.needs_choice) {
-            var msg = 'The system prompt has changed since this job was originally run.\n\n' +
-                      'Original: v' + data.original_version + '\n' +
-                      'Latest:   v' + data.current_version + '\n\n' +
-                      'OK = use the LATEST (v' + data.current_version + ')\n' +
-                      'Cancel = use the ORIGINAL (v' + data.original_version + ')';
-            var useLatest = confirm(msg);
-            doRerun(id, useLatest ? data.current_version : data.original_version);
-            return;
-        }
-        pollQueue();
-    });
 }
 
 function deleteJob(id) {
