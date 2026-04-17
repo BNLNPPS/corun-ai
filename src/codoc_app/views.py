@@ -814,23 +814,23 @@ def definition_fragment(request, pk):
         sp = SystemPrompt.objects.filter(group_id=sp_gid, is_current=True).first()
     sysprompts = SystemPrompt.objects.filter(is_current=True)
     from corun_app.models import (
-        GEMINI_MODELS, GEMMA_MODELS, MCP_SERVERS, GEMMA_EXTRA_MCP_LABELS,
+        GEMINI_MODELS, REMOTE_MODELS, MCP_SERVERS, REMOTE_EXTRA_MCP_LABELS,
     )
     # Resolve MCP tool keys to labels. Look in MCP_SERVERS first (local-
-    # execution registry), then fall back to GEMMA_EXTRA_MCP_LABELS for
+    # execution registry), then fall back to REMOTE_EXTRA_MCP_LABELS for
     # tools that only exist on the Mac side.
     def _mcp_label(key):
         if key in MCP_SERVERS:
             return MCP_SERVERS[key]['label']
-        if key in GEMMA_EXTRA_MCP_LABELS:
-            return GEMMA_EXTRA_MCP_LABELS[key]
+        if key in REMOTE_EXTRA_MCP_LABELS:
+            return REMOTE_EXTRA_MCP_LABELS[key]
         return None
     mcp_tools = d.data.get('mcp_tools', [])
     labels = [lbl for lbl in (_mcp_label(k) for k in mcp_tools) if lbl]
     d.data['mcp_tools_display'] = ', '.join(labels) or 'None'
     model = d.data.get('model', 'sonnet')
-    d.data['is_gemma'] = model in GEMMA_MODELS
-    if model in GEMMA_MODELS:
+    d.data['is_remote'] = model in REMOTE_MODELS
+    if model in REMOTE_MODELS:
         d.data['cli_preview'] = (
             f'POST tjai /api/work/submit {{capability:{model}}} '
             f'→ remote Mac ollama ({model})'
@@ -854,7 +854,7 @@ def definition_edit(request, pk=None):
         d = None
 
     if request.method == 'POST':
-        from corun_app.models import GEMMA_MODELS, GEMMA_FIXED_MCP_TOOLS
+        from corun_app.models import REMOTE_MODELS, REMOTE_FIXED_MCP_TOOLS
         name = request.POST.get('name', '').strip()
         description = request.POST.get('description', '').strip()
         model = request.POST.get('model', 'sonnet')
@@ -871,10 +871,10 @@ def definition_edit(request, pk=None):
         except (ValueError, TypeError):
             timeout_s = 3600
 
-        # Gemma models have a fixed MCP set wired into the Mac-side runner;
-        # anything the client sent is discarded.
-        if model in GEMMA_MODELS:
-            effective_mcp_tools = list(GEMMA_FIXED_MCP_TOOLS)
+        # Remote-dispatched models (Gemma, Qwen, …) have a fixed MCP set
+        # wired into the Mac-side runner; anything the client sent is discarded.
+        if model in REMOTE_MODELS:
+            effective_mcp_tools = list(REMOTE_FIXED_MCP_TOOLS)
         else:
             effective_mcp_tools = mcp_tools or ['lxr', 'github']
 
@@ -909,8 +909,8 @@ def definition_edit(request, pk=None):
             if sp:
                 current_sp_content = sp.content
     from corun_app.models import (
-        MODEL_CHOICES, MCP_SERVERS, GEMMA_MODELS, GEMMA_FIXED_MCP_TOOLS,
-        GEMMA_EXTRA_MCP_LABELS,
+        MODEL_CHOICES, MCP_SERVERS, REMOTE_MODELS, REMOTE_FIXED_MCP_TOOLS,
+        REMOTE_EXTRA_MCP_LABELS,
     )
     from collections import OrderedDict
     _mg = OrderedDict()
@@ -924,12 +924,12 @@ def definition_edit(request, pk=None):
         'model_groups': model_groups,
         'mcp_choices': [(k, v['label']) for k, v in MCP_SERVERS.items()],
         # Mac-only MCPs — rendered as additional checkboxes after the
-        # regular ones. The template tags them with data-gemma-only so
-        # the JS can hide them in non-gemma mode (where they have no
+        # regular ones. The template tags them with data-remote-only so
+        # the JS can hide them in non-remote mode (where they have no
         # local-execution config and would silently fail if selected).
-        'gemma_extra_choices': list(GEMMA_EXTRA_MCP_LABELS.items()),
-        'gemma_models_json': json.dumps(sorted(GEMMA_MODELS)),
-        'gemma_fixed_mcp_json': json.dumps(list(GEMMA_FIXED_MCP_TOOLS)),
+        'remote_extra_choices': list(REMOTE_EXTRA_MCP_LABELS.items()),
+        'remote_models_json': json.dumps(sorted(REMOTE_MODELS)),
+        'remote_fixed_mcp_json': json.dumps(list(REMOTE_FIXED_MCP_TOOLS)),
         'sp_contents_json': json.dumps(sp_contents),
     }, request=request)
     return HttpResponse(html)

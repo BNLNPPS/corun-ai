@@ -48,8 +48,8 @@
                 <input type="checkbox" name="mcp_tools" value="{{ key }}" {% if definition and key in definition.data.mcp_tools %}checked{% elif not definition and key == 'lxr' %}checked{% endif %}> {{ label }}
             </label>
             {% endfor %}
-            {% for key, label in gemma_extra_choices %}
-            <label class="mcp-tool-label" data-mcp-key="{{ key }}" data-gemma-only="1" style="display:none;font-size:13px;color:var(--text);margin-right:16px">
+            {% for key, label in remote_extra_choices %}
+            <label class="mcp-tool-label" data-mcp-key="{{ key }}" data-remote-only="1" style="display:none;font-size:13px;color:var(--text);margin-right:16px">
                 <input type="checkbox" name="mcp_tools" value="{{ key }}" {% if definition and key in definition.data.mcp_tools %}checked{% endif %}> {{ label }}
             </label>
             {% endfor %}
@@ -75,8 +75,8 @@
 
 <script>
 var _spContents = JSON.parse('{{ sp_contents_json|escapejs }}');
-var _gemmaModels = JSON.parse('{{ gemma_models_json|escapejs }}');
-var _gemmaFixedMcp = JSON.parse('{{ gemma_fixed_mcp_json|escapejs }}');
+var _remoteModels = JSON.parse('{{ remote_models_json|escapejs }}');
+var _remoteFixedMcp = JSON.parse('{{ remote_fixed_mcp_json|escapejs }}');
 
 function updateSpPreview() {
     var sel = document.getElementById('sp-select');
@@ -88,43 +88,43 @@ updateSpPreview();
 
 function updateMcpToolsForModel() {
     var modelSel = document.getElementById('model-select');
-    var isGemma = modelSel && _gemmaModels.indexOf(modelSel.value) >= 0;
+    var isRemote = modelSel && _remoteModels.indexOf(modelSel.value) >= 0;
     var labelEl = document.getElementById('mcp-tools-label');
     var container = document.getElementById('mcp-tools-container');
     if (!container) return;
 
     // Toggle the section heading to make the constraint visible.
     if (labelEl) {
-        labelEl.textContent = isGemma
-            ? 'MCP Tools (fixed for Gemma — configured on remote worker)'
+        labelEl.textContent = isRemote
+            ? 'MCP Tools (fixed — configured on remote worker)'
             : 'MCP Tools';
     }
 
     container.querySelectorAll('label.mcp-tool-label').forEach(function(lbl) {
         var key = lbl.getAttribute('data-mcp-key');
-        var gemmaOnly = lbl.getAttribute('data-gemma-only') === '1';
+        var remoteOnly = lbl.getAttribute('data-remote-only') === '1';
         var cb = lbl.querySelector('input[type=checkbox]');
         if (!cb) return;
-        if (isGemma) {
-            var isFixed = _gemmaFixedMcp.indexOf(key) >= 0;
+        if (isRemote) {
+            var isFixed = _remoteFixedMcp.indexOf(key) >= 0;
             if (isFixed) {
                 cb.checked = true;
                 cb.disabled = true;
                 lbl.style.display = '';
                 lbl.style.opacity = '0.75';
-                lbl.title = 'Always on for Gemma models (configured on remote worker)';
+                lbl.title = 'Always on for remote-dispatched models (configured on remote worker)';
             } else {
                 // Hide non-applicable tools entirely to keep the UI honest.
                 cb.checked = false;
                 cb.disabled = true;
                 lbl.style.display = 'none';
             }
-        } else if (gemmaOnly) {
+        } else if (remoteOnly) {
             // Mac-only tools have no local-execution config in
             // MCP_SERVERS — selecting them for a claude/gemini def
             // would silently fail at .mcp.json write time. Hide them
-            // in non-gemma mode and ensure they aren't carried over
-            // from a previous gemma selection.
+            // in non-remote mode and ensure they aren't carried over
+            // from a previous remote-model selection.
             cb.checked = false;
             cb.disabled = true;
             lbl.style.display = 'none';

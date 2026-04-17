@@ -33,7 +33,7 @@ from django.conf import settings as dj_settings
 from django.utils import timezone
 
 from corun_app.models import (
-    AppLog, GEMINI_MODELS, GEMMA_MODELS, Job, JobDefinition, Page, Prompt, SystemPrompt,
+    AppLog, GEMINI_MODELS, REMOTE_MODELS, Job, JobDefinition, Page, Prompt, SystemPrompt,
 )
 
 logger = logging.getLogger('corun.worker')
@@ -106,16 +106,17 @@ class RunningJob:
     """Tracks a running job.
 
     For claude/gemini: `process` is the local subprocess, `tjai_entry_id`
-    is None. For gemma: `process` is None (inference runs on a remote Mac),
+    is None. For remote-dispatched models: `process` is None (inference
+    runs on a remote Mac),
     `tjai_entry_id` is the UUID of the tjai work entry being polled.
     """
     __slots__ = ('job_id', 'prompt_id', 'job_def_id', 'process', 'timeout', 'started',
-                 'use_gemini', 'use_gemma', 'job_dir', 'tjai_entry_id',
-                 'gemma_model', 'next_poll')
+                 'use_gemini', 'use_remote', 'job_dir', 'tjai_entry_id',
+                 'remote_model', 'next_poll')
 
     def __init__(self, job_id, prompt_id, job_def_id, process, timeout,
-                 use_gemini=False, job_dir=None, use_gemma=False,
-                 tjai_entry_id=None, gemma_model=None):
+                 use_gemini=False, job_dir=None, use_remote=False,
+                 tjai_entry_id=None, remote_model=None):
         self.job_id = job_id
         self.prompt_id = prompt_id
         self.job_def_id = job_def_id
@@ -123,10 +124,10 @@ class RunningJob:
         self.timeout = timeout
         self.started = time.monotonic()
         self.use_gemini = use_gemini
-        self.use_gemma = use_gemma
+        self.use_remote = use_remote
         self.job_dir = job_dir
         self.tjai_entry_id = tjai_entry_id
-        self.gemma_model = gemma_model
+        self.remote_model = remote_model
         self.next_poll = 0.0
 
 
@@ -161,7 +162,7 @@ class Worker:
         for job in Job.objects.filter(status__in=['running', 'queued']):
             _log('warning', f'Orphaned job {job.id} ({job.status}) — marking failed',
                  job_id=str(job.id))
-            # Gemma orphan: best-effort delete of the staged tjai entry.
+            # Remoteorphan: best-effort delete of the staged tjai entry.
             tjai_entry_id = job.data.get('tjai_entry_id') if job.data else None
             if tjai_entry_id:
                 try:
@@ -179,7 +180,7 @@ class Worker:
     def _main_loop(self):
         while not self.shutdown:
             self._check_running()
-            # Always call _pick_up_jobs — gemma jobs run on a remote
+            # Always call _pick_up_jobs — remote jobs run on a remote
             # machine (Mac Studio via tjai) and don't consume a local
             # subprocess slot, so the cap shouldn't gate them. The
             # pickup function applies the local cap only to the local
@@ -190,11 +191,11 @@ class Worker:
     def _local_running_count(self):
         """Count of running jobs that occupy a local subprocess slot.
 
-        Gemma jobs run remotely on the Mac via tjai's worker pipeline —
+        Remotejobs run remotely on the Mac via tjai's worker pipeline —
         they're a poll loop on this side, not a subprocess, so they
         don't count against max_concurrent.
         """
-        return sum(1 for rj in self.running.values() if not rj.use_gemma)
+        return sum(1 for rj in self.running.values() if not rj.use_remote)
 
         # Graceful shutdown
         if self.running:
@@ -212,26 +213,26 @@ class Worker:
                 self._finish_job(rj, 'failed', 'Worker shutdown — job killed')
 
     def _pick_up_jobs(self):
-        # Pick up gemma jobs unconditionally (they don't take a local
+        # Pick up remote jobs unconditionally (they don't take a local
         # subprocess slot — the remote Mac worker handles concurrency
         # on its side via the long-poll claim protocol).
-        gemma_models = list(GEMMA_MODELS)
-        gemma_queued = list(Job.objects.filter(
+        remote_models = list(REMOTE_MODELS)
+        remote_queued = list(Job.objects.filter(
             status='queued',
-            definition__data__model__in=gemma_models,
+            definition__data__model__in=remote_models,
         ).select_related('definition', 'prompt').order_by('created_at')[:20])
 
         # Local subprocess jobs are gated by the free local slots.
         local_slots = self.max_concurrent - self._local_running_count()
-        non_gemma_queued = []
+        non_remote_queued = []
         if local_slots > 0:
-            non_gemma_queued = list(Job.objects.filter(
+            non_remote_queued = list(Job.objects.filter(
                 status='queued',
             ).exclude(
-                definition__data__model__in=gemma_models,
+                definition__data__model__in=remote_models,
             ).select_related('definition', 'prompt').order_by('created_at')[:local_slots])
 
-        for job in gemma_queued + non_gemma_queued:
+        for job in remote_queued + non_remote_queued:
             try:
                 self._start_job(job)
             except Exception as e:
@@ -294,9 +295,9 @@ class Worker:
                     _json.dump({'mcpServers': mcp_conf}, f)
 
         use_gemini = False
-        use_gemma = False
+        use_remote = False
         cmd = None
-        if model in GEMMA_MODELS:
+        if model in REMOTE_MODELS:
             # Remote dispatch via tjai — no local subprocess.
             # The prompt is the system prompt plus user content combined,
             # matching the pattern used for gemini (ollama has no separate
@@ -316,9 +317,9 @@ class Worker:
             tjai_entry_id = resp.get('entry_id')
             if not tjai_entry_id:
                 raise RuntimeError(f'tjai /api/work/submit returned no entry_id: {resp}')
-            use_gemma = True
+            use_remote = True
             _log('info',
-                 f'Gemma job {job.id} staged on tjai entry {tjai_entry_id} '
+                 f'Remotejob {job.id} staged on tjai entry {tjai_entry_id} '
                  f'(model={model})',
                  job_id=str(job.id), tjai_entry_id=tjai_entry_id)
         elif model in GEMINI_MODELS:
@@ -369,7 +370,7 @@ class Worker:
             'system_prompt_version': system_prompt.version,
             'prompt_content': prompt.content,
         }
-        if use_gemma:
+        if use_remote:
             job_data_update['tjai_entry_id'] = tjai_entry_id
         job.data = {**job.data, **job_data_update}
         job.save(update_fields=['status', 'data', 'modified_at'])
@@ -378,7 +379,7 @@ class Worker:
         prompt.save(update_fields=['status', 'modified_at'])
 
         proc = None
-        if not use_gemma:
+        if not use_remote:
             proc = subprocess.Popen(
                 cmd,
                 stdin=subprocess.PIPE,
@@ -399,10 +400,10 @@ class Worker:
             process=proc,
             timeout=timeout,
             use_gemini=use_gemini,
-            use_gemma=use_gemma,
+            use_remote=use_remote,
             job_dir=job_dir if use_gemini else None,
-            tjai_entry_id=tjai_entry_id if use_gemma else None,
-            gemma_model=model if use_gemma else None,
+            tjai_entry_id=tjai_entry_id if use_remote else None,
+            remote_model=model if use_remote else None,
         )
 
         _log('info',
@@ -419,7 +420,7 @@ class Worker:
                 job = Job.objects.get(id=job_id)
                 if job.status == 'cancelled':
                     _log('info', f'Aborting job {job_id}', job_id=job_id)
-                    if rj.use_gemma:
+                    if rj.use_remote:
                         # Soft-delete the tjai entry so the worker stops
                         # processing it (if still queued) and does not leak.
                         # If the Mac is mid-inference it will still finish,
@@ -444,7 +445,7 @@ class Worker:
                     self._finish_job(rj, 'cancelled', 'Aborted by user')
                     continue
             except Job.DoesNotExist:
-                if rj.use_gemma:
+                if rj.use_remote:
                     try:
                         _tjai_request(
                             'DELETE',
@@ -460,8 +461,8 @@ class Worker:
                 del self.running[job_id]
                 continue
 
-            # Gemma: poll tjai for result
-            if rj.use_gemma:
+            # Remote-dispatched model: poll tjai for result
+            if rj.use_remote:
                 now = time.monotonic()
                 if now < rj.next_poll:
                     continue
@@ -471,13 +472,13 @@ class Worker:
                         'GET', f'/api/work/result/{rj.tjai_entry_id}')
                 except Exception as e:
                     _log('warning',
-                         f'Gemma poll failed for job {job_id}: {e}',
+                         f'Remotepoll failed for job {job_id}: {e}',
                          job_id=job_id)
                     # On timeout of the overall job, fail below; otherwise keep polling
                     if time.monotonic() - rj.started > rj.timeout:
                         self._finish_job(
                             rj, 'failed',
-                            f'Gemma polling error after {rj.timeout}s: {e}')
+                            f'Remotepolling error after {rj.timeout}s: {e}')
                     continue
 
                 status = state.get('status')
@@ -488,18 +489,18 @@ class Worker:
                         self._complete_job(rj, content, elapsed)
                     else:
                         self._finish_job(
-                            rj, 'failed', 'Gemma returned empty result')
+                            rj, 'failed', 'Remotereturned empty result')
                     continue
                 if status == 'failed':
                     err = state.get('error') or 'unknown error'
-                    self._finish_job(rj, 'failed', f'Gemma failed: {err[:300]}')
+                    self._finish_job(rj, 'failed', f'Remotefailed: {err[:300]}')
                     continue
 
                 # Still queued/running — check overall timeout
                 elapsed = time.monotonic() - rj.started
                 if elapsed > rj.timeout:
                     _log('warning',
-                         f'Gemma job {job_id} timed out after {elapsed:.0f}s',
+                         f'Remotejob {job_id} timed out after {elapsed:.0f}s',
                          job_id=job_id)
                     try:
                         _tjai_request(
@@ -624,7 +625,7 @@ class Worker:
 
         # Release the tjai work entry after successful ingestion. Best-effort:
         # a failure here only leaves a soft-deletable stray entry behind.
-        if rj.use_gemma and rj.tjai_entry_id:
+        if rj.use_remote and rj.tjai_entry_id:
             try:
                 _tjai_request(
                     'DELETE', f'/api/work/result/{rj.tjai_entry_id}')
@@ -649,9 +650,9 @@ class Worker:
             _log('error', f'Failed to update job {rj.job_id} status: {e}',
                  job_id=rj.job_id)
 
-        # Best-effort tjai entry cleanup on any gemma failure/cancel path
+        # Best-effort tjai entry cleanup on any remote-job failure/cancel path
         # that didn't already delete it.
-        if rj.use_gemma and rj.tjai_entry_id:
+        if rj.use_remote and rj.tjai_entry_id:
             try:
                 _tjai_request(
                     'DELETE', f'/api/work/result/{rj.tjai_entry_id}')

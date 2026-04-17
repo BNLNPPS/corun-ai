@@ -68,8 +68,9 @@ DATABASES = {
     },
 }
 
-# tjai integration — Gemma jobs are dispatched via tjai's remote-worker pipeline
-# (the worker daemon POSTs to /api/work/submit and polls /api/work/result/<uuid>).
+# tjai integration — remote-dispatched models (Gemma, Qwen, …) are sent
+# via tjai's remote-worker pipeline (the worker daemon POSTs to
+# /api/work/submit and polls /api/work/result/<uuid>).
 # tjai runs on the same host so the default localhost URL is correct;
 # override via CORUN_TJAI_BASE_URL if tjai is moved.
 TJAI_BASE_URL = config('CORUN_TJAI_BASE_URL', default='http://127.0.0.1:8002')

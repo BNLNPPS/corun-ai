@@ -10,8 +10,10 @@ import uuid
 from django.conf import settings
 
 # Model registry: (value, label, group). Single source of truth.
-# 'Gemma' models do not run locally — they are dispatched to a remote worker
-# on Torre's Mac Studio via tjai's /api/work/submit endpoint.
+# 'Gemma' and 'Qwen' models (and any other open-source family hosted on
+# Torre's Mac Studio) do not run locally here — they are dispatched to the
+# remote worker via tjai's /api/work/submit endpoint. The set of such
+# families is REMOTE_MODELS below.
 MODEL_CHOICES = [
     ('opus', 'Opus', 'Claude'),
     ('sonnet', 'Sonnet', 'Claude'),
@@ -20,31 +22,39 @@ MODEL_CHOICES = [
     ('gemini-2.5-pro', 'Gemini 2.5 Pro', 'Gemini'),
     ('gemma4', 'gemma4', 'Gemma'),
     ('gemma4-fast', 'gemma4-fast', 'Gemma'),
+    ('qwen', 'qwen', 'Qwen'),
 ]
 
 GEMINI_MODELS = {m[0] for m in MODEL_CHOICES if m[2] == 'Gemini'}
 GEMMA_MODELS = {m[0] for m in MODEL_CHOICES if m[2] == 'Gemma'}
+QWEN_MODELS = {m[0] for m in MODEL_CHOICES if m[2] == 'Qwen'}
+
+# Models dispatched to the remote worker (Mac Studio via tjai
+# /api/work/submit) rather than run as a local subprocess. Currently all
+# ollama-hosted open-source families. The dispatch path, fixed MCP set,
+# and UI constraints are shared across the whole set.
+REMOTE_MODELS = GEMMA_MODELS | QWEN_MODELS
 
 # Mac-only MCP tools — labels for tools the Mac's tj_agent dispatcher
-# advertises to gemma runs but that corun-ai never spawns locally (so
-# they have no entry in MCP_SERVERS, which is the local-execution
+# advertises to remote-model runs but that corun-ai never spawns locally
+# (so they have no entry in MCP_SERVERS, which is the local-execution
 # registry). Their config lives on the Mac side; this dict exists only
-# so the codoc UI can show the user what gemma will actually have
+# so the codoc UI can show the user what remote runs will actually have
 # available.
-GEMMA_EXTRA_MCP_LABELS = {
+REMOTE_EXTRA_MCP_LABELS = {
     'fetch':      'Fetch (HTTP)',
     'npp_search': 'NPP Search (Google CSE)',
     'web_search': 'Web Search (SerpAPI)',
 }
 
-# Gemma jobs run on Torre's Mac Studio via the tjai remote-worker pipeline.
-# Every tool the Mac advertises is always available — lxr/github are also
-# in MCP_SERVERS (they happen to have local-execution configs too), the
-# rest live in GEMMA_EXTRA_MCP_LABELS only. The codoc definition UI locks
-# Gemma definitions to exactly this set, ticked and not editable. Keep
-# this list in sync with what the Mac's tj_agent.dispatcher actually
-# wires up — that's the source of truth.
-GEMMA_FIXED_MCP_TOOLS = ['lxr', 'github', 'fetch', 'npp_search', 'web_search']
+# Remote-model jobs run on Torre's Mac Studio via the tjai remote-worker
+# pipeline. Every tool the Mac advertises is always available — lxr/github
+# are also in MCP_SERVERS (they happen to have local-execution configs
+# too), the rest live in REMOTE_EXTRA_MCP_LABELS only. The codoc
+# definition UI locks remote-model definitions to exactly this set,
+# ticked and not editable. Keep this list in sync with what the Mac's
+# tj_agent.dispatcher actually wires up — that's the source of truth.
+REMOTE_FIXED_MCP_TOOLS = ['lxr', 'github', 'fetch', 'npp_search', 'web_search']
 
 # Available MCP servers: (key, label, config_dict)
 MCP_SERVERS = {
