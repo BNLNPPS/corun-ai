@@ -344,6 +344,13 @@ class Worker:
                 '--system-prompt', system_prompt.content,
                 '--output-format', 'text',
                 '--model', model,
+                # Batch pipeline — nobody is there to answer permission
+                # prompts. Tools are fenced by .mcp.json below (only the
+                # configured MCP servers are exposed), so bypassing the
+                # per-tool prompt is safe. Without this, smaller models
+                # (Haiku in particular) self-censor and refuse to call
+                # MCP tools even with --allowedTools mcp__*.
+                '--permission-mode', 'bypassPermissions',
             ]
             # Wire up the MCP tools the definition selected. Without these
             # flags claude -p cannot call any MCP tool — it silently falls

@@ -1,7 +1,12 @@
 <div style="padding:0.75rem">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
         <h2 style="font-size:16px;margin:0">{{ definition.name }}</h2>
-        {% if user.is_authenticated %}<button class="btn" onclick="copyDef('{{ definition.id }}')">Copy</button>{% endif %}
+        {% if user.is_authenticated %}
+        <div style="display:flex;gap:6px">
+            <button class="btn" onclick="loadDefEditor('{{ definition.id }}')">Edit</button>
+            <button class="btn" onclick="copyDef('{{ definition.id }}')">Copy</button>
+        </div>
+        {% endif %}
     </div>
     {% if definition.description %}<p style="color:var(--grey);font-size:13px;margin-bottom:12px">{{ definition.description }}</p>{% endif %}
 
@@ -43,7 +48,4 @@
         {% if definition.last_run_at %} · Last run: {{ definition.last_run_at|date:"M j H:i" }}{% endif %}
     </div>
 
-    {% if user.is_authenticated %}
-    <button class="btn" onclick="loadDefEditor('{{ definition.id }}')">Edit</button>
-    {% endif %}
 </div>
