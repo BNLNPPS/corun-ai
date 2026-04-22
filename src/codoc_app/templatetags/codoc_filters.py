@@ -1,8 +1,36 @@
+import json
 import re
 
 from django import template
 
 register = template.Library()
+
+
+_PR_TITLE_CACHE = {'data': None, 'mtime': 0}
+
+
+def _pr_title_from_cache(url):
+    """Look up a GitHub PR's title in the /doc/prs/ cache file, or return ''."""
+    import os
+    from codoc_app.prs_cache import CACHE_PATH
+    try:
+        st = os.stat(CACHE_PATH)
+    except OSError:
+        return ''
+    if _PR_TITLE_CACHE['mtime'] != st.st_mtime:
+        try:
+            with open(CACHE_PATH) as f:
+                _PR_TITLE_CACHE['data'] = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return ''
+        _PR_TITLE_CACHE['mtime'] = st.st_mtime
+    data = _PR_TITLE_CACHE['data'] or {}
+    for bucket in ('open', 'closed'):
+        for prs in (data.get(bucket) or {}).values():
+            for pr in prs:
+                if pr.get('url') == url:
+                    return pr.get('title') or ''
+    return ''
 
 
 @register.filter
@@ -47,9 +75,11 @@ def prompt_title(content):
         return f'PR #{pr_num}:{first[3:]}'.rstrip()
     if first.startswith('PR:'):
         return first  # no URL to extract number from
-    # Bare URL as the whole content (oldest submissions).
+    # Bare URL as the whole content (oldest submissions). Look up the
+    # title from the /doc/prs/ cache if we have it.
     if _PR_URL_RE.fullmatch(first) and pr_num:
-        return f'PR #{pr_num}'
+        title = _pr_title_from_cache(first)
+        return f'PR #{pr_num}: {title}' if title else f'PR #{pr_num}'
     return first
 
 
