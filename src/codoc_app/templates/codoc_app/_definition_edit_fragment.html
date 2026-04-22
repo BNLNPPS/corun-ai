@@ -28,10 +28,10 @@
             <div style="flex:1">
                 <label style="display:block;font-size:12px;color:var(--grey);margin-bottom:4px">Effort</label>
                 <select name="effort" style="width:100%;font-size:13px;padding:6px 10px;border:1px solid var(--border);border-radius:4px;background:var(--card-bg);color:var(--text)">
-                    <option value="low" {% if definition.data.effort == 'low' %}selected{% endif %}>Low</option>
-                    <option value="medium" {% if definition.data.effort == 'medium' %}selected{% endif %}>Medium</option>
-                    <option value="high" {% if not definition or definition.data.effort == 'high' %}selected{% endif %}>High</option>
-                    <option value="xhigh" {% if definition.data.effort == 'xhigh' %}selected{% endif %}>Extra High</option>
+                    <option value="low" {% if definition.data.effort == 'low' %}selected{% endif %}>low</option>
+                    <option value="medium" {% if definition.data.effort == 'medium' %}selected{% endif %}>medium</option>
+                    <option value="high" {% if not definition or definition.data.effort == 'high' %}selected{% endif %}>high</option>
+                    <option value="xhigh" {% if definition.data.effort == 'xhigh' %}selected{% endif %}>xhigh</option>
                 </select>
             </div>
             <div style="flex:1">
