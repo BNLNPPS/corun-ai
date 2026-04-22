@@ -127,7 +127,7 @@ function renderPrRow(pr, repo, showRepo) {
     html += '<span class="pr-title"><a href="' + pr.url + '" target="_blank">' + escHtml(pr.title) + '</a>' + badge + '</span>';
     html += '<span class="pr-author">' + escHtml(author) + '</span>';
     html += '<span class="pr-date">' + updated + '</span>';
-    html += '<button class="pr-review-btn" data-url="' + escHtml(pr.url) + '">Submit PR review</button>';
+    html += '<button class="pr-review-btn" data-url="' + escHtml(pr.url) + '" data-title="' + escHtml(pr.title) + '">Submit PR review</button>';
     html += '</div>';
     return html;
 }
@@ -137,13 +137,16 @@ document.addEventListener('click', function(ev) {
     const btn = ev.target.closest('.pr-review-btn');
     if (!btn || btn.disabled) return;
     const url = btn.getAttribute('data-url');
+    const title = btn.getAttribute('data-title') || '';
     if (!url) return;
     btn.disabled = true;
     btn.textContent = 'Submitting...';
     const fd = new FormData();
     fd.append('section', window._PR_REVIEW_SECTION_ID);
     fd.append('definition', window._PR_REVIEW_DEFINITION_ID);
-    fd.append('content', url);
+    // First line is displayed as the prompt title in the queue page.
+    // URL follows on a separate line so the reviewer can parse it.
+    fd.append('content', 'PR: ' + title + '\n' + url);
     fd.append('action', 'generate');
     fd.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
     fetch('{% url "codoc:save_prompt_api" %}', {method: 'POST', body: fd, credentials: 'same-origin'})
