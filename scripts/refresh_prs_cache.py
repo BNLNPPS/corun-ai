@@ -19,7 +19,10 @@ from pathlib import Path
 THIS = Path(__file__).resolve()
 SRC = THIS.parent.parent / 'src'
 sys.path.insert(0, str(SRC))
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'corun_project.settings')
+# Force-set: when called from the tjai action-agent, its DJANGO_SETTINGS_MODULE
+# (tjai_project.settings) leaks into our subprocess env, and a plain setdefault
+# leaves it unchanged — importing then fails with ModuleNotFoundError.
+os.environ['DJANGO_SETTINGS_MODULE'] = 'corun_project.settings'
 import django
 django.setup()
 
