@@ -139,6 +139,13 @@
            for rendered pre/code so code blocks are readable in both modes. */
         .cm-s-material-darker .cm-comment { color: #f0c0c0 !important; }
         body.light .content pre, body.light .content code { color: #1a1a1a; }
+        /* Text selection highlight — default was near-black-on-black,
+           invisible. Ported from tjai entry_detail.html. */
+        ::selection { background: #264f78; color: #fff; }
+        ::-moz-selection { background: #264f78; color: #fff; }
+        .CodeMirror-selected { background: #264f78 !important; }
+        .CodeMirror-focused .CodeMirror-selected { background: #264f78 !important; }
+        body.light ::selection, body.light ::-moz-selection { background: #b3d4fc; color: #1a1a1a; }
         .content table { border-collapse: collapse; margin-bottom: 1em; width: 100%; }
         .content th, .content td { border: 1px solid var(--border); padding: 5px 8px; text-align: left; font-size: 13px; }
         .content th { font-weight: 600; }
