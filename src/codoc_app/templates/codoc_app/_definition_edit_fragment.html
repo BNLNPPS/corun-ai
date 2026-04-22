@@ -31,6 +31,7 @@
                     <option value="low" {% if definition.data.effort == 'low' %}selected{% endif %}>Low</option>
                     <option value="medium" {% if definition.data.effort == 'medium' %}selected{% endif %}>Medium</option>
                     <option value="high" {% if not definition or definition.data.effort == 'high' %}selected{% endif %}>High</option>
+                    <option value="xhigh" {% if definition.data.effort == 'xhigh' %}selected{% endif %}>Extra High</option>
                 </select>
             </div>
             <div style="flex:1">
