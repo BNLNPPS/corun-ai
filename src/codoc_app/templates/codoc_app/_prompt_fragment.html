@@ -19,8 +19,15 @@
         {% endif %}
     </div>
 
-    <!-- User prompt — prominent -->
+    <!-- User prompt — prominent. PR-review prompts render as a single
+         clickable "PR #<N>: <title>" link to the GitHub PR. -->
+    {% with link=prompt.content|prompt_url title=prompt.content|prompt_title %}
+    {% if link %}
+    <div class="prompt-content"><a href="{{ link }}" target="_blank" rel="noopener">{{ title }}</a></div>
+    {% else %}
     <div class="prompt-content">{{ prompt.content }}</div>
+    {% endif %}
+    {% endwith %}
 
     <!-- Actions -->
     <div style="display:flex;gap:8px;margin-bottom:16px">

@@ -1,3 +1,4 @@
+{% load codoc_filters %}
 <div style="padding:0.75rem">
     <div style="font-size:12px;color:var(--grey);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
         <div>
@@ -14,7 +15,13 @@
         {% endif %}
     </div>
 
+    {% with link=prompt.content|prompt_url title=prompt.content|prompt_title %}
+    {% if link %}
+    <div class="prompt-content"><a href="{{ link }}" target="_blank" rel="noopener">{{ title }}</a></div>
+    {% else %}
     <div class="prompt-content">{{ prompt.content }}</div>
+    {% endif %}
+    {% endwith %}
 
     {% if pages %}
     <div style="margin-top:12px">
