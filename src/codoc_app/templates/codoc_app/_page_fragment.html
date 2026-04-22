@@ -20,12 +20,19 @@
         {% endif %}
     </div>
 
-    <!-- User prompt -->
-    {% if page.data.prompt_content %}
-    <div class="prompt-content">{{ page.data.prompt_content }}</div>
-    {% elif page.prompt %}
-    <div class="prompt-content">{{ page.prompt.content }}</div>
+    <!-- User prompt. For PR-review prompts, render as a single
+         clickable "PR #<N>: <title>" link to the GitHub PR. -->
+    {% with raw=page.data.prompt_content|default:page.prompt.content %}
+    {% if raw %}
+        {% with link=raw|prompt_url title=raw|prompt_title %}
+        {% if link %}
+        <div class="prompt-content"><a href="{{ link }}" target="_blank" rel="noopener">{{ title }}</a></div>
+        {% else %}
+        <div class="prompt-content">{{ raw }}</div>
+        {% endif %}
+        {% endwith %}
     {% endif %}
+    {% endwith %}
 
     {% if page.data.has_thinking %}
     <div style="margin-bottom:8px">

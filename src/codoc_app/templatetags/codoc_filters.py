@@ -51,3 +51,17 @@ def prompt_title(content):
     if _PR_URL_RE.fullmatch(first) and pr_num:
         return f'PR #{pr_num}'
     return first
+
+
+@register.filter
+def prompt_url(content):
+    """Return the GitHub PR URL present in a prompt's content, or ''.
+
+    Used alongside prompt_title to render PR-review prompts as a single
+    clickable title. Non-PR prompts return '' so the template can fall
+    back to plain text.
+    """
+    if not content:
+        return ''
+    m = _PR_URL_RE.search(content)
+    return m.group(0) if m else ''
