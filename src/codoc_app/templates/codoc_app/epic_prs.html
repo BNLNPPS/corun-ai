@@ -127,7 +127,7 @@ function renderPrRow(pr, repo, showRepo) {
     html += '<span class="pr-title"><a href="' + pr.url + '" target="_blank">' + escHtml(pr.title) + '</a>' + badge + '</span>';
     html += '<span class="pr-author">' + escHtml(author) + '</span>';
     html += '<span class="pr-date">' + updated + '</span>';
-    const prepContent = encodeURIComponent('PR: ' + pr.title + '\n' + pr.url);
+    const prepContent = encodeURIComponent('PR #' + pr.number + ': ' + pr.title + '\n' + pr.url);
     const prepHref = '{% url "codoc:prepare" %}'
         + '?section_id=' + encodeURIComponent(window._PR_REVIEW_SECTION_ID)
         + '&definition_id=' + encodeURIComponent(window._PR_REVIEW_DEFINITION_ID)

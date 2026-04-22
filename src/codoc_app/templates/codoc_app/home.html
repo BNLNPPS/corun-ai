@@ -1,4 +1,5 @@
 {% extends "codoc_app/base.html" %}
+{% load codoc_filters %}
 
 {% block title %}codoc-ai{% endblock %}
 
@@ -25,7 +26,7 @@
                 <div class="browse-item" data-type="prompt" data-id="{{ p.group_id }}" data-vid="{{ p.id }}" tabindex="-1" style="display:flex;gap:0;align-items:flex-start">
                     {% if p.child_pages %}<span class="tree-toggle" data-target="pages-{{ p.id }}" onclick="event.stopPropagation();toggleTree(this)" style="margin-top:2px">&#9654;</span>{% endif %}
                     <div style="flex:1;min-width:0{% if not p.child_pages %};padding-left:14px{% endif %}">
-                        <div class="browse-item-title">{{ p.content }}</div>
+                        <div class="browse-item-title">{{ p.content|prompt_title }}</div>
                         <div class="browse-item-meta">v{{ p.version }}{% if p.is_current %} · current{% endif %} · {{ p.created_at|date:"M j H:i" }}{% if p.comment_count %} · <span style="color:var(--accent)">{{ p.comment_count }} comment{{ p.comment_count|pluralize }}</span>{% endif %}</div>
                     </div>
                 </div>
