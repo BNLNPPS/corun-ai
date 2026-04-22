@@ -1120,8 +1120,12 @@ def about_edit(request):
 
 # ── ePIC PRs ─────────────────────────────────────────────────────────────────
 
-# All repos indexed by the ePIC LXR code browser
+# All repos indexed by the ePIC LXR code browser. This list drives both
+# the /doc/prs/ listing and the pr-review JobDefinition's effective scope
+# — a PR from a repo not on this list won't appear here. Kept in sync with
+# the LXR indexer's repo set (contact Shuwei Ye / yesw@bnl.gov to add).
 _EPIC_REPOS = [
+    # ePIC core software
     "eic/acts", "eic/algorithms", "eic/containers", "eic/DD4hep",
     "eic/DEMPgen", "eic/detector_benchmarks", "eic/drich-dev",
     "eic/EDM4eic", "eic/edpm", "eic/eic-shell", "eic/eic-spack",
@@ -1141,6 +1145,16 @@ _EPIC_REPOS = [
     "eic/tutorial-jana2", "eic/tutorial-reconstruction-algorithms",
     "eic/tutorial-setting-up-environment",
     "eic/tutorial-simulations-using-ddsim-and-geant4", "eic/UpsilonGen",
+    # Streaming workflow testbed core packages (added to LXR 2026-04-22)
+    "BNLNPPS/swf-testbed", "BNLNPPS/swf-monitor",
+    "BNLNPPS/swf-common-lib", "BNLNPPS/swf-remote",
+    # ESI / Opticks (added to LXR 2026-04-06)
+    "BNLNPPS/eic-opticks",
+    # PanDA production stack (added to LXR 2026-04-06)
+    "PanDAWMS/panda-server", "PanDAWMS/pilot2",
+    "HSF/harvester", "HSF/iDDS",
+    # AID2E (added to LXR 2026-04-06)
+    "aid2e/AID2E-framework",
 ]
 
 
