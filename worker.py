@@ -352,6 +352,12 @@ class Worker:
                 # MCP tools even with --allowedTools mcp__*.
                 '--permission-mode', 'bypassPermissions',
             ]
+            # Reasoning effort — passes through to the model's thinking
+            # budget. Previously this JobDefinition field was stored but
+            # silently ignored; fixed 2026-04-22.
+            effort = (job_def.data or {}).get('effort')
+            if effort:
+                cmd += ['--effort', effort]
             # Wire up the MCP tools the definition selected. Without these
             # flags claude -p cannot call any MCP tool — it silently falls
             # back to reasoning without data. Path is relative to cwd=job_dir

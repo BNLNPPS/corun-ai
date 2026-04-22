@@ -839,6 +839,7 @@ def definition_fragment(request, pk):
     labels = [lbl for lbl in (_mcp_label(k) for k in mcp_tools) if lbl]
     d.data['mcp_tools_display'] = ', '.join(labels) or 'None'
     model = d.data.get('model', 'sonnet')
+    effort = d.data.get('effort', 'high')
     d.data['is_remote'] = model in REMOTE_MODELS
     if model in REMOTE_MODELS:
         d.data['cli_preview'] = (
@@ -848,7 +849,12 @@ def definition_fragment(request, pk):
     elif model in GEMINI_MODELS:
         d.data['cli_preview'] = f'gemini -m {model} --yolo -p "<prompt>"'
     else:
-        d.data['cli_preview'] = f'claude -p --model {model} --system-prompt "..." --output-format text'
+        mcp_part = ' --mcp-config .mcp.json --allowedTools "mcp__*"' if d.data.get('mcp_tools') else ''
+        d.data['cli_preview'] = (
+            f'claude -p --model {model} --effort {effort}'
+            f' --permission-mode bypassPermissions'
+            f' --system-prompt "..." --output-format text{mcp_part}'
+        )
     html = render_to_string('codoc_app/_definition_fragment.html', {
         'definition': d, 'sysprompt': sp, 'sysprompts': sysprompts,
     }, request=request)
