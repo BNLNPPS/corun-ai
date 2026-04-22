@@ -1128,90 +1128,65 @@ _EPIC_REPOS = [
 ]
 
 
-_EPIC_PRS_CACHE_FILE = '/tmp/epic_prs_cache.json'
-
-
-def _refresh_epic_prs_cache():
-    """Build PR data and write to cache file. Run outside WSGI."""
-    closed_since = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
-    open_prs = {}
-    closed_prs = {}
-    for repo in _EPIC_REPOS:
-        for state, since, target in [
-            ("open", "2000-01-01", open_prs),
-            ("closed", closed_since, closed_prs),
-        ]:
-            cmd = [
-                "gh", "search", "prs",
-                f"--updated=>={since}",
-                f"--repo={repo}",
-                f"--state={state}",
-                "--json=title,url,number,author,updatedAt,createdAt",
-                "--limit=50",
-            ]
-            try:
-                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-                if proc.returncode == 0 and proc.stdout.strip():
-                    prs = json.loads(proc.stdout)
-                    if prs:
-                        target[repo] = prs
-            except (subprocess.TimeoutExpired, json.JSONDecodeError):
-                continue
-
-    data = {
-        "open": open_prs,
-        "closed": closed_prs,
-        "generated": datetime.now(timezone.utc).isoformat(),
-    }
-    import tempfile, os
-    # Atomic write
-    fd, tmp = tempfile.mkstemp(dir='/tmp', suffix='.json')
-    try:
-        with os.fdopen(fd, 'w') as f:
-            json.dump(data, f)
-        os.replace(tmp, _EPIC_PRS_CACHE_FILE)
-    except Exception:
-        os.unlink(tmp)
-        raise
-    return data
-
-
 def epic_prs_api(request):
-    """Serve cached PR data. Trigger background refresh if stale."""
+    """Serve cached PR data. Cache is kept warm by a tjai-scheduled
+    refresher (15 min delta, nightly full rebuild). If the cache is
+    missing, fire a one-shot full rebuild in the background and tell
+    the client we're refreshing; if the cache is stale past the warm
+    window, fire a delta refresh in the background but still return
+    what we have.
+    """
     import os
-    data = None
-    try:
-        with open(_EPIC_PRS_CACHE_FILE) as f:
-            data = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        pass
+    from .prs_cache import load_cache, CACHE_PATH, SCHEMA_VERSION
 
-    # If cache missing or older than 1 hour, trigger background refresh
-    stale = True
-    if data and data.get('generated'):
-        try:
-            gen = datetime.fromisoformat(data['generated'])
-            stale = (datetime.now(timezone.utc) - gen).total_seconds() > 3600
-        except ValueError:
-            pass
+    data = load_cache()
 
-    if stale:
-        # Fire-and-forget background refresh
+    if data is None:
+        # Cold start — no cache on disk or schema mismatch. Fire a full
+        # rebuild in the background and return a stub the JS can poll on.
         subprocess.Popen(
             [sys.executable, '-c',
-             'import django; import os; os.environ.setdefault("DJANGO_SETTINGS_MODULE", "corun_project.settings"); '
-             'django.setup(); from codoc_app.views import _refresh_epic_prs_cache; _refresh_epic_prs_cache()'],
+             'import django, os; os.environ.setdefault("DJANGO_SETTINGS_MODULE", "corun_project.settings"); '
+             'django.setup(); from codoc_app.prs_cache import refresh_full; refresh_full()'],
+            cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        return JsonResponse({
+            'open': {}, 'closed': {}, 'generated': None,
+            'status': 'refreshing', 'schema_version': SCHEMA_VERSION,
+        })
+
+    # Stale if the scheduled refresher hasn't run recently — usually
+    # means the scheduler is broken or a human is looking seconds after
+    # a deploy. Fire a delta in the background; return existing data now.
+    try:
+        gen = datetime.fromisoformat(data['generated'])
+        stale = (datetime.now(timezone.utc) - gen).total_seconds() > 1800  # 30 min
+    except (KeyError, ValueError):
+        stale = True
+
+    if stale:
+        subprocess.Popen(
+            [sys.executable, '-c',
+             'import django, os; os.environ.setdefault("DJANGO_SETTINGS_MODULE", "corun_project.settings"); '
+             'django.setup(); from codoc_app.prs_cache import refresh_delta; refresh_delta()'],
             cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
 
-    if data:
-        return JsonResponse(data)
-    return JsonResponse({"open": {}, "closed": {}, "generated": None, "status": "refreshing"})
+    return JsonResponse(data)
 
 
 def epic_prs_view(request):
-    return render(request, 'codoc_app/epic_prs.html', {'repo_count': len(_EPIC_REPOS)})
+    # Bind the PR-review Section + JobDefinition UUIDs into the page context
+    # so the Submit PR review button can POST directly without an extra fetch.
+    sec = Section.objects.filter(name='pr-review', status='active').first()
+    jdef = JobDefinition.objects.filter(name='codoc-pr-review', status='active').first()
+    return render(request, 'codoc_app/epic_prs.html', {
+        'repo_count': len(_EPIC_REPOS),
+        'pr_review_section_id': sec.id if sec else '',
+        'pr_review_definition_id': jdef.id if jdef else '',
+    })
 
 
 # ── Account ──────────────────────────────────────────────────────────────────

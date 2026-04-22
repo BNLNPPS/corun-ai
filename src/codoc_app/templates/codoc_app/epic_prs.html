@@ -17,6 +17,9 @@
 .light .pr-new { background: #dcfce7; color: #166534; }
 .pr-loading { color: var(--grey); font-style: italic; padding: 1em 0; }
 .pr-count { color: var(--grey); font-size: 13px; font-weight: normal; margin-left: 8px; }
+.pr-review-btn { font-size: 11px; padding: 2px 8px; border: 1px solid var(--border); background: var(--card-bg); color: var(--accent); cursor: pointer; font-family: inherit; border-radius: 3px; margin-left: 6px; }
+.pr-review-btn:hover { border-color: var(--accent); background: var(--selected); }
+.pr-review-btn:disabled { color: var(--grey); cursor: default; border-color: var(--border); background: transparent; }
 .view-toggle { display: inline-flex; gap: 0; margin-bottom: 1em; }
 .view-toggle button { font-size: 12px; padding: 4px 14px; border: 1px solid var(--border); background: var(--card-bg); color: var(--grey); cursor: pointer; font-family: inherit; }
 .view-toggle button:first-child { border-radius: 3px 0 0 3px; }
@@ -27,6 +30,11 @@
 {% block page %}
 <div class="page">
     <div class="main">
+        {% csrf_token %}
+        <script>
+            window._PR_REVIEW_SECTION_ID = "{{ pr_review_section_id|default:'' }}";
+            window._PR_REVIEW_DEFINITION_ID = "{{ pr_review_definition_id|default:'' }}";
+        </script>
         <h1>ePIC Pull Requests</h1>
         <p class="subtitle">Across {{ repo_count }} <a href="https://eic-code-browser.sdcc.bnl.gov/lxr/source" target="_blank">LXR-indexed</a> repositories · <span id="cache-info" style="color:var(--grey)"></span></p>
         <p class="subtitle" style="margin-top:-1em"><a href="https://github.com/eic" target="_blank">github.com/eic</a></p>
@@ -111,9 +119,43 @@ function renderPrRow(pr, repo, showRepo) {
     html += '<span class="pr-title"><a href="' + pr.url + '" target="_blank">' + escHtml(pr.title) + '</a>' + badge + '</span>';
     html += '<span class="pr-author">' + escHtml(author) + '</span>';
     html += '<span class="pr-date">' + updated + '</span>';
+    html += '<button class="pr-review-btn" data-url="' + escHtml(pr.url) + '">Submit PR review</button>';
     html += '</div>';
     return html;
 }
+
+// Delegated click handler for Submit PR review buttons.
+document.addEventListener('click', function(ev) {
+    const btn = ev.target.closest('.pr-review-btn');
+    if (!btn || btn.disabled) return;
+    const url = btn.getAttribute('data-url');
+    if (!url) return;
+    btn.disabled = true;
+    btn.textContent = 'Submitting...';
+    const fd = new FormData();
+    fd.append('section', window._PR_REVIEW_SECTION_ID);
+    fd.append('definition', window._PR_REVIEW_DEFINITION_ID);
+    fd.append('content', url);
+    fd.append('action', 'generate');
+    fd.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
+    fetch('{% url "codoc:save_prompt_api" %}', {method: 'POST', body: fd, credentials: 'same-origin'})
+        .then(r => r.json())
+        .then(data => {
+            if (data.ok) {
+                btn.textContent = 'Queued';
+                btn.style.color = '#9ccc65';
+            } else {
+                btn.textContent = 'Error';
+                btn.title = data.error || 'submit failed';
+                btn.disabled = false;
+            }
+        })
+        .catch(err => {
+            btn.textContent = 'Error';
+            btn.title = String(err);
+            btn.disabled = false;
+        });
+});
 
 function escHtml(s) {
     const d = document.createElement('div');
