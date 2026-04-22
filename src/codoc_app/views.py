@@ -355,6 +355,10 @@ def prepare_prompt(request):
         sysprompt = SystemPrompt.objects.filter(group_id=sp_gid, is_current=True).first()
 
     # Pre-fill context (GET only; POST uses request.POST values directly).
+    # Two supported GET modes:
+    #   ?source_job=<uuid>  — pull section/content/definition from an existing job.
+    #   ?section_id=<uuid>&definition_id=<uuid>&content=<str>  — direct prefill
+    #     (e.g. from the Submit PR review button on /doc/prs/).
     prefill = {'section_id': '', 'content': '', 'definition_id': ''}
     if request.method == 'GET':
         source_job_id = request.GET.get('source_job', '').strip()
@@ -368,6 +372,12 @@ def prepare_prompt(request):
                     'content': src.prompt.content,
                     'definition_id': str(src.definition_id),
                 }
+        else:
+            prefill = {
+                'section_id': request.GET.get('section_id', '').strip(),
+                'content': request.GET.get('content', ''),
+                'definition_id': request.GET.get('definition_id', '').strip(),
+            }
 
     if request.method == 'POST':
         section_id = request.POST.get('section')

@@ -127,46 +127,19 @@ function renderPrRow(pr, repo, showRepo) {
     html += '<span class="pr-title"><a href="' + pr.url + '" target="_blank">' + escHtml(pr.title) + '</a>' + badge + '</span>';
     html += '<span class="pr-author">' + escHtml(author) + '</span>';
     html += '<span class="pr-date">' + updated + '</span>';
-    html += '<button class="pr-review-btn" data-url="' + escHtml(pr.url) + '" data-title="' + escHtml(pr.title) + '">Submit PR review</button>';
+    const prepContent = encodeURIComponent('PR: ' + pr.title + '\n' + pr.url);
+    const prepHref = '{% url "codoc:prepare" %}'
+        + '?section_id=' + encodeURIComponent(window._PR_REVIEW_SECTION_ID)
+        + '&definition_id=' + encodeURIComponent(window._PR_REVIEW_DEFINITION_ID)
+        + '&content=' + prepContent;
+    html += '<a class="pr-review-btn" href="' + prepHref + '">Submit PR review</a>';
     html += '</div>';
     return html;
 }
 
-// Delegated click handler for Submit PR review buttons.
-document.addEventListener('click', function(ev) {
-    const btn = ev.target.closest('.pr-review-btn');
-    if (!btn || btn.disabled) return;
-    const url = btn.getAttribute('data-url');
-    const title = btn.getAttribute('data-title') || '';
-    if (!url) return;
-    btn.disabled = true;
-    btn.textContent = 'Submitting...';
-    const fd = new FormData();
-    fd.append('section', window._PR_REVIEW_SECTION_ID);
-    fd.append('definition', window._PR_REVIEW_DEFINITION_ID);
-    // First line is displayed as the prompt title in the queue page.
-    // URL follows on a separate line so the reviewer can parse it.
-    fd.append('content', 'PR: ' + title + '\n' + url);
-    fd.append('action', 'generate');
-    fd.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
-    fetch('{% url "codoc:save_prompt_api" %}', {method: 'POST', body: fd, credentials: 'same-origin'})
-        .then(r => r.json())
-        .then(data => {
-            if (data.ok) {
-                btn.textContent = 'Queued';
-                btn.style.color = '#9ccc65';
-            } else {
-                btn.textContent = 'Error';
-                btn.title = data.error || 'submit failed';
-                btn.disabled = false;
-            }
-        })
-        .catch(err => {
-            btn.textContent = 'Error';
-            btn.title = String(err);
-            btn.disabled = false;
-        });
-});
+// Submit PR review anchors navigate to /doc/prepare/ with prefill, so the
+// user gets the standard model/definition/sysprompt selection before hitting
+// Generate — same flow as other codoc submits.
 
 function escHtml(s) {
     const d = document.createElement('div');
