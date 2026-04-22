@@ -115,6 +115,47 @@ def _run_pool(tasks: list[tuple[str, str, str]]) -> dict:
     return out
 
 
+def check_rate_limit() -> dict:
+    """Query GitHub's current core rate-limit state via `gh api rate_limit`.
+
+    `rate_limit` itself does not count toward the quota. Returns
+    {'remaining': int, 'limit': int, 'reset': iso_ts, 'error': str|None}.
+    """
+    try:
+        proc = subprocess.run(
+            ['gh', 'api', 'rate_limit'],
+            capture_output=True, text=True, timeout=10,
+        )
+    except subprocess.TimeoutExpired:
+        return {'remaining': None, 'limit': None, 'reset': None,
+                'error': 'timeout'}
+    if proc.returncode != 0:
+        return {'remaining': None, 'limit': None, 'reset': None,
+                'error': (proc.stderr or '').strip()[:200]}
+    try:
+        data = json.loads(proc.stdout or '{}')
+        core = (data.get('resources') or {}).get('core') or data.get('rate') or {}
+        remaining = core.get('remaining')
+        limit = core.get('limit')
+        reset_ts = core.get('reset')
+        reset_iso = (
+            datetime.fromtimestamp(reset_ts, tz=timezone.utc).isoformat()
+            if isinstance(reset_ts, (int, float)) else None
+        )
+        return {'remaining': remaining, 'limit': limit, 'reset': reset_iso,
+                'error': None}
+    except (json.JSONDecodeError, TypeError, ValueError) as e:
+        return {'remaining': None, 'limit': None, 'reset': None,
+                'error': f'parse: {e}'}
+
+
+# Minimum core-API budget we must have free before starting a refresh.
+# A full rebuild is ~176 calls; we want comfortable headroom above that
+# so other consumers (regular `gh` use, PR body fetches inside a review
+# generation, etc.) aren't starved. 500 is conservative; tune in use.
+RATE_LIMIT_FLOOR = 500
+
+
 def load_cache() -> dict | None:
     """Return the cached data dict or None if missing/unreadable/wrong-schema."""
     try:

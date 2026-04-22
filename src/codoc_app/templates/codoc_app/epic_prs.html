@@ -20,6 +20,10 @@
 .pr-review-btn { font-size: 11px; padding: 2px 8px; border: 1px solid var(--border); background: var(--card-bg); color: var(--accent); cursor: pointer; font-family: inherit; border-radius: 3px; margin-left: 6px; }
 .pr-review-btn:hover { border-color: var(--accent); background: var(--selected); }
 .pr-review-btn:disabled { color: var(--grey); cursor: default; border-color: var(--border); background: transparent; }
+.pr-status-bar { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin: -0.5em 0 1em 0; font-size: 12px; color: var(--grey); }
+.pr-update-btn { font-size: 12px; padding: 3px 10px; border: 1px solid var(--border); background: var(--card-bg); color: var(--text); cursor: pointer; font-family: inherit; border-radius: 3px; }
+.pr-update-btn:hover { border-color: var(--accent); }
+.pr-update-btn:disabled { color: var(--grey); cursor: not-allowed; }
 .view-toggle { display: inline-flex; gap: 0; margin-bottom: 1em; }
 .view-toggle button { font-size: 12px; padding: 4px 14px; border: 1px solid var(--border); background: var(--card-bg); color: var(--grey); cursor: pointer; font-family: inherit; }
 .view-toggle button:first-child { border-radius: 3px 0 0 3px; }
@@ -36,8 +40,12 @@
             window._PR_REVIEW_DEFINITION_ID = "{{ pr_review_definition_id|default:'' }}";
         </script>
         <h1>ePIC Pull Requests</h1>
-        <p class="subtitle">Across {{ repo_count }} <a href="https://eic-code-browser.sdcc.bnl.gov/lxr/source" target="_blank">LXR-indexed</a> repositories · <span id="cache-info" style="color:var(--grey)"></span></p>
+        <p class="subtitle">Across {{ repo_count }} <a href="https://eic-code-browser.sdcc.bnl.gov/lxr/source" target="_blank">LXR-indexed</a> repositories</p>
         <p class="subtitle" style="margin-top:-1em"><a href="https://github.com/eic" target="_blank">github.com/eic</a></p>
+        <div class="pr-status-bar">
+            <span id="cache-info"></span>
+            <button id="pr-update-btn" class="pr-update-btn" onclick="updatePRs()">Update</button>
+        </div>
 
         <div class="view-toggle">
             <button id="btn-byrepo" class="active" onclick="setView('byrepo')">By Repository</button>
@@ -215,6 +223,42 @@ function updateCacheAge() {
     document.getElementById('cache-info').textContent = 'refreshed ' + ago;
 }
 setInterval(updateCacheAge, 30000);
+
+function updatePRs() {
+    var btn = document.getElementById('pr-update-btn');
+    var info = document.getElementById('cache-info');
+    btn.disabled = true;
+    var oldText = btn.textContent;
+    btn.textContent = 'Updating...';
+    var csrf = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    fetch('{% url "codoc:epic_prs_refresh_api" %}', {
+        method: 'POST',
+        headers: {'X-CSRFToken': csrf},
+        credentials: 'same-origin',
+    }).then(function(r) {
+        return r.json().then(function(data) { return {status: r.status, data: data}; });
+    }).then(function(res) {
+        if (res.data.ok) {
+            _prData = res.data;
+            renderAll();
+            if (res.data.generated) {
+                _generatedAt = new Date(res.data.generated);
+                updateCacheAge();
+            }
+            btn.textContent = oldText;
+            btn.disabled = false;
+        } else {
+            info.textContent = res.data.reason || 'update failed';
+            btn.textContent = oldText;
+            btn.disabled = false;
+        }
+    }).catch(function(err) {
+        info.textContent = 'update error: ' + err;
+        btn.textContent = oldText;
+        btn.disabled = false;
+    });
+}
+
 loadPRs();
 </script>
 {% endblock %}

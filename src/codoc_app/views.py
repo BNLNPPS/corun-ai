@@ -1177,6 +1177,45 @@ def epic_prs_api(request):
     return JsonResponse(data)
 
 
+@require_POST
+@login_required
+def epic_prs_refresh_api(request):
+    """Forced delta refresh triggered by the Update button.
+
+    Precheck the GitHub core rate limit; only run if we have comfortable
+    headroom. A full rebuild is ~176 calls; RATE_LIMIT_FLOOR defines the
+    minimum remaining budget we insist on before proceeding.
+    """
+    from .prs_cache import refresh_delta, check_rate_limit, RATE_LIMIT_FLOOR
+
+    rl = check_rate_limit()
+    remaining = rl.get('remaining')
+    if remaining is None:
+        return JsonResponse({
+            'ok': False,
+            'reason': f'rate-limit precheck failed: {rl.get("error") or "no data"}',
+            'rate_limit': rl,
+        }, status=503)
+    if remaining < RATE_LIMIT_FLOOR:
+        return JsonResponse({
+            'ok': False,
+            'reason': (
+                f'insufficient GitHub rate-limit headroom '
+                f'({remaining} < floor {RATE_LIMIT_FLOOR}); resets {rl.get("reset")}'
+            ),
+            'rate_limit': rl,
+        }, status=429)
+
+    try:
+        data = refresh_delta()
+    except Exception as e:
+        return JsonResponse({'ok': False, 'reason': f'refresh failed: {e}'}, status=500)
+
+    data['ok'] = True
+    data['rate_limit'] = rl
+    return JsonResponse(data)
+
+
 def epic_prs_view(request):
     # Bind the PR-review Section + JobDefinition UUIDs into the page context
     # so the Submit PR review button can POST directly without an extra fetch.

@@ -52,4 +52,5 @@ urlpatterns = [
     path('comments/', views.comments_page, name='comments'),
     path('prs/', views.epic_prs_view, name='epic_prs'),
     path('_api/prs/', views.epic_prs_api, name='epic_prs_api'),
+    path('_api/prs/refresh/', views.epic_prs_refresh_api, name='epic_prs_refresh_api'),
 ]
