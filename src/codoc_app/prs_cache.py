@@ -1,11 +1,17 @@
 """Persistent, delta-updatable cache of ePIC PRs across indexed repos.
 
-Backs the /doc/prs/ view. Uses `gh search prs` under a bounded thread
-pool. Two entry points:
+Backs the /doc/prs/ view. Uses `gh api repos/<OWNER>/<REPO>/pulls`
+(core REST rate limit, 5000/hr authenticated) rather than `gh search
+prs` (search API, 30/min — too tight for a per-repo scan across 88
+indexed repos). Client-side filters the returned list by updated_at
+against a 30-day window (full) or an incremental since timestamp
+(delta).
+
+Two entry points:
 
 - `refresh_full()`: scan every repo × {open, closed-30d}; write cache.
-- `refresh_delta(since_iso)`: scan updates since a timestamp, merge into
-  the existing cache. Much cheaper than full.
+- `refresh_delta(since_iso)`: same but only keep PRs updated since a
+  timestamp, merge into existing cache. Cheaper hot-path.
 
 The cache file lives outside /tmp so it survives reboot. Callers:
 - the Django view, which reads it to render the page and may fire a
@@ -42,15 +48,35 @@ def _load_repo_list() -> list[str]:
     return EPIC_REPOS
 
 
-def _gh_search(repo: str, state: str, since: str) -> tuple[str, str, list[dict] | None, str | None]:
-    """Run one `gh search prs` call. Return (repo, state, prs|None, err|None)."""
+def _normalize_pr(pr: dict) -> dict:
+    """Reshape a `gh api .../pulls` PR object to the fields our JS expects."""
+    user = pr.get('user') or {}
+    return {
+        'number': pr.get('number'),
+        'title': pr.get('title'),
+        'url': pr.get('html_url'),
+        'state': pr.get('state'),
+        'author': {'login': user.get('login')} if user else None,
+        'updatedAt': pr.get('updated_at'),
+        'createdAt': pr.get('created_at'),
+    }
+
+
+def _gh_pulls(repo: str, state: str, since_iso: str) -> tuple[str, str, list[dict] | None, str | None]:
+    """List PRs via `gh api repos/<repo>/pulls` and filter by updated_at >= since_iso.
+
+    Uses the core REST rate limit (5000/hr authed) rather than the
+    search API's 30/min cap. Pages up to 100 results; virtually all
+    repos fit in one page for our 30-day window.
+    """
     cmd = [
-        'gh', 'search', 'prs',
-        f'--updated=>={since}',
-        f'--repo={repo}',
-        f'--state={state}',
-        '--json=title,url,number,author,updatedAt,createdAt,state',
-        '--limit=50',
+        'gh', 'api',
+        f'repos/{repo}/pulls',
+        '-X', 'GET',
+        '-f', f'state={state}',
+        '-f', 'sort=updated',
+        '-f', 'direction=desc',
+        '-f', 'per_page=100',
     ]
     try:
         proc = subprocess.run(
@@ -61,16 +87,24 @@ def _gh_search(repo: str, state: str, since: str) -> tuple[str, str, list[dict] 
     if proc.returncode != 0:
         return (repo, state, None, (proc.stderr or '').strip()[:200])
     try:
-        return (repo, state, json.loads(proc.stdout or '[]'), None)
+        raw = json.loads(proc.stdout or '[]')
     except json.JSONDecodeError as e:
         return (repo, state, None, f'json: {e}')
+
+    # Filter by updated_at >= since_iso client-side; normalize shape.
+    kept: list[dict] = []
+    for pr in raw:
+        updated = pr.get('updated_at') or ''
+        if updated >= since_iso:
+            kept.append(_normalize_pr(pr))
+    return (repo, state, kept, None)
 
 
 def _run_pool(tasks: list[tuple[str, str, str]]) -> dict:
     """Run gh calls concurrently. Returns {'open': {repo: [...]}, 'closed': {...}, 'errors': [...]}."""
     out = {'open': {}, 'closed': {}, 'errors': []}
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
-        futs = [ex.submit(_gh_search, repo, state, since) for repo, state, since in tasks]
+        futs = [ex.submit(_gh_pulls, repo, state, since) for repo, state, since in tasks]
         for fut in as_completed(futs):
             repo, state, prs, err = fut.result()
             if err:
@@ -150,11 +184,13 @@ def _merge_open_closed(existing: dict, fresh: dict) -> dict:
 def refresh_full() -> dict:
     """Full scan: every repo × {open, closed-30d}. Writes cache atomically."""
     repos = _load_repo_list()
-    closed_since = (datetime.now(timezone.utc) - timedelta(days=CLOSED_WINDOW_DAYS)).strftime('%Y-%m-%d')
+    closed_since_iso = (
+        datetime.now(timezone.utc) - timedelta(days=CLOSED_WINDOW_DAYS)
+    ).strftime('%Y-%m-%dT%H:%M:%SZ')
     tasks: list[tuple[str, str, str]] = []
     for repo in repos:
-        tasks.append((repo, 'open', '2000-01-01'))
-        tasks.append((repo, 'closed', closed_since))
+        tasks.append((repo, 'open', '2000-01-01T00:00:00Z'))
+        tasks.append((repo, 'closed', closed_since_iso))
     pool = _run_pool(tasks)
     data = {
         'schema_version': SCHEMA_VERSION,
@@ -183,7 +219,7 @@ def refresh_delta(since_iso: str | None = None) -> dict:
             last = datetime.fromisoformat(existing['generated'])
         except (KeyError, ValueError):
             return refresh_full()
-        since_iso = (last - timedelta(minutes=5)).strftime('%Y-%m-%d')
+        since_iso = (last - timedelta(minutes=5)).strftime('%Y-%m-%dT%H:%M:%SZ')
 
     repos = _load_repo_list()
     tasks: list[tuple[str, str, str]] = []
