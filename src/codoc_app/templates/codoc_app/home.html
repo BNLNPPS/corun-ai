@@ -20,11 +20,11 @@
         </div>
         <div class="browse-list" id="browse-list" tabindex="0">
             {% for sec in sections %}
-            <div class="browse-section" data-section="{{ sec.name }}"><span class="tree-toggle" data-target="sec-{{ sec.name }}" onclick="event.stopPropagation();toggleTree(this)" style="margin-right:4px">&#9654;</span>{{ sec.title|default:sec.name }}</div>
+            <div class="browse-section" data-section="{{ sec.name }}" onclick="toggleTree(this.querySelector('.tree-toggle'))" style="cursor:pointer"><span class="tree-toggle" data-target="sec-{{ sec.name }}" style="margin-right:4px">&#9654;</span>{{ sec.title|default:sec.name }}</div>
             <div class="tree-children" id="sec-{{ sec.name }}" style="display:none">
                 {% for p in sec.browse_items %}
                 <div class="browse-item" data-type="prompt" data-id="{{ p.group_id }}" data-vid="{{ p.id }}" tabindex="-1" style="display:flex;gap:0;align-items:flex-start">
-                    {% if p.child_pages %}<span class="tree-toggle" data-target="pages-{{ p.id }}" onclick="event.stopPropagation();toggleTree(this)" style="margin-top:2px">&#9654;</span>{% endif %}
+                    {% if p.child_pages %}<span class="tree-toggle" data-target="pages-{{ p.id }}" style="margin-top:2px">&#9654;</span>{% endif %}
                     <div style="flex:1;min-width:0{% if not p.child_pages %};padding-left:14px{% endif %}">
                         <div class="browse-item-title">{{ p.content|prompt_title }}</div>
                         <div class="browse-item-meta">v{{ p.version }}{% if p.is_current %} · current{% endif %} · {{ p.created_at|date:"M j H:i" }}{% if p.comment_count %} · <span style="color:var(--accent)">{{ p.comment_count }} comment{{ p.comment_count|pluralize }}</span>{% endif %}</div>
@@ -158,7 +158,11 @@ function refreshBrowse() {
 }
 
 items.forEach((item, idx) => {
-    item.addEventListener('click', () => selectItem(idx));
+    item.addEventListener('click', () => {
+        selectItem(idx);
+        var toggle = item.querySelector(':scope > .tree-toggle');
+        if (toggle) toggleTree(toggle);
+    });
 });
 
 function nextVisible(from, dir) {

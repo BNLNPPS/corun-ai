@@ -27,7 +27,8 @@
 .view-toggle { display: inline-flex; gap: 0; margin-bottom: 1em; }
 .view-toggle button { font-size: 12px; padding: 4px 14px; border: 1px solid var(--border); background: var(--card-bg); color: var(--grey); cursor: pointer; font-family: inherit; }
 .view-toggle button:first-child { border-radius: 3px 0 0 3px; }
-.view-toggle button:last-child { border-radius: 0 3px 3px 0; border-left: none; }
+.view-toggle button:last-child { border-radius: 0 3px 3px 0; }
+.view-toggle button:not(:first-child) { border-left: none; }
 .view-toggle button.active { background: #3d7ea6; color: #e0e0e0; border-color: #3d7ea6; }
 {% endblock %}
 
@@ -50,6 +51,7 @@
         <div class="view-toggle">
             <button id="btn-byrepo" class="active" onclick="setView('byrepo')">By Repository</button>
             <button id="btn-chrono" onclick="setView('chrono')">Chronological</button>
+            <button id="btn-reviewed" onclick="setView('reviewed')">Reviewed</button>
         </div>
 
         <div class="pr-section" id="open-section">
@@ -114,6 +116,19 @@ function renderChrono(container, data, countEl) {
     countEl.textContent = '(' + all.length + ')';
 }
 
+function renderReviewed(container, data, countEl) {
+    const all = flattenPRs(data).filter(pr => pr.reviewed);
+    if (all.length === 0) {
+        container.innerHTML = '<p class="empty">None reviewed.</p>';
+        countEl.textContent = '(0)';
+        return;
+    }
+    let html = '';
+    for (const pr of all) html += renderPrRow(pr, pr._repo, true);
+    container.innerHTML = html;
+    countEl.textContent = '(' + all.length + ')';
+}
+
 function renderPrRow(pr, repo, showRepo) {
     const author = pr.author ? pr.author.login : '?';
     const updated = (pr.updatedAt || '').slice(0, 10);
@@ -149,7 +164,10 @@ function escHtml(s) {
 
 function renderAll() {
     if (!_prData) return;
-    const renderFn = _currentView === 'chrono' ? renderChrono : renderByRepo;
+    let renderFn;
+    if (_currentView === 'chrono') renderFn = renderChrono;
+    else if (_currentView === 'reviewed') renderFn = renderReviewed;
+    else renderFn = renderByRepo;
     renderFn(document.getElementById('open-prs'), _prData.open || {}, document.getElementById('open-count'));
     renderFn(document.getElementById('closed-prs'), _prData.closed || {}, document.getElementById('closed-count'));
 }
@@ -159,11 +177,13 @@ function setView(view) {
     localStorage.setItem('codoc-pr-view', view);
     document.getElementById('btn-byrepo').classList.toggle('active', view === 'byrepo');
     document.getElementById('btn-chrono').classList.toggle('active', view === 'chrono');
+    document.getElementById('btn-reviewed').classList.toggle('active', view === 'reviewed');
     renderAll();
 }
 // Apply saved view to toggle buttons on load
 document.getElementById('btn-byrepo').classList.toggle('active', _currentView === 'byrepo');
 document.getElementById('btn-chrono').classList.toggle('active', _currentView === 'chrono');
+document.getElementById('btn-reviewed').classList.toggle('active', _currentView === 'reviewed');
 
 function loadPRs() {
     fetch('{% url "codoc:epic_prs_api" %}')

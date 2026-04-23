@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 import subprocess
 import sys
 import uuid
@@ -1203,6 +1204,23 @@ def epic_prs_api(request):
             cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
+
+    # Tag PRs with whether codoc has produced a review for them. "Reviewed" =
+    # at least one completed codoc-pr-review Job whose linked Prompt content
+    # references the PR's URL. Computed at request time — reviewed-status
+    # changes independently of PR cache refreshes.
+    pr_review_def = JobDefinition.objects.filter(name='codoc-pr-review').first()
+    reviewed_urls = set()
+    if pr_review_def:
+        url_re = re.compile(r'https://github\.com/[\w.-]+/[\w.-]+/pull/\d+')
+        for j in Job.objects.filter(
+            definition=pr_review_def, status='completed', prompt__isnull=False,
+        ).select_related('prompt'):
+            reviewed_urls.update(url_re.findall(j.prompt.content or ''))
+    for state in ('open', 'closed'):
+        for prs in (data.get(state) or {}).values():
+            for pr in prs:
+                pr['reviewed'] = pr.get('url') in reviewed_urls
 
     return JsonResponse(data)
 
