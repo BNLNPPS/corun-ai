@@ -1049,6 +1049,238 @@ def sysprompt_save_api(request):
     return JsonResponse({'ok': True, 'group_id': group_id})
 
 
+# ── Surgical edit endpoint for sysprompts ────────────────────────────────────
+
+_SP_HEADING_RE = re.compile(r'^(#{1,6})\s+(.+?)\s*#*\s*$')
+
+
+def _sp_find_section(content, heading, level=None, occurrence=None):
+    """Locate a markdown heading and return its body line range. Mirror of
+    the tjai _find_section helper. Returns ('found', heading_idx, body_start,
+    body_end, total) | ('not_found', 0) | ('multiple', count) |
+    ('out_of_range', count)."""
+    lines = content.split('\n')
+    matches = []
+    in_fence = False
+    target = heading.strip()
+    for i, line in enumerate(lines):
+        stripped = line.lstrip()
+        if stripped.startswith('```') or stripped.startswith('~~~'):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        m = _SP_HEADING_RE.match(line)
+        if not m:
+            continue
+        line_level = len(m.group(1))
+        if level is not None and line_level != level:
+            continue
+        if m.group(2).strip() != target:
+            continue
+        matches.append((i, line_level))
+
+    count = len(matches)
+    if count == 0:
+        return ('not_found', 0)
+    if count > 1 and occurrence is None:
+        return ('multiple', count)
+    chosen = (occurrence or 1) - 1
+    if chosen < 0 or chosen >= count:
+        return ('out_of_range', count)
+
+    heading_line_idx, heading_level = matches[chosen]
+    body_start = heading_line_idx + 1
+    body_end = len(lines)
+    in_fence = False
+    for j in range(body_start, len(lines)):
+        stripped = lines[j].lstrip()
+        if stripped.startswith('```') or stripped.startswith('~~~'):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        m = _SP_HEADING_RE.match(lines[j])
+        if m and len(m.group(1)) <= heading_level:
+            body_end = j
+            break
+    return ('found', heading_line_idx, body_start, body_end, count)
+
+
+def _sp_write_new_version(current, new_content, request_user):
+    """Mirror of sysprompt_save_api's version-bump path, with two
+    improvements: (1) max(version)+1 to survive deleted-but-not-removed
+    holes in the version numbering (the v11 collision I hit earlier),
+    (2) wrapped in a transaction for atomicity."""
+    from django.db import transaction
+    from django.db.models import Max
+    with transaction.atomic():
+        current.is_current = False
+        current.save(update_fields=['is_current', 'modified_at'])
+        next_v = (SystemPrompt.objects.filter(group_id=current.group_id)
+                  .aggregate(m=Max('version'))['m'] or 0) + 1
+        new = SystemPrompt.objects.create(
+            group_id=current.group_id, version=next_v, is_current=True,
+            name=current.name, content=new_content,
+            data={**(current.data or {}), 'changed_by': request_user.username},
+        )
+    return new
+
+
+@require_POST
+@login_required
+def sysprompt_patch_api(request, group_id):
+    """Surgical edit of a sysprompt — replace_text or replace_section.
+    Use INSTEAD OF sysprompt_save_api when you only want to change a
+    small portion of a long sysprompt; this avoids re-sending the full
+    body and gives clearer error semantics on near-misses.
+
+    Request body (JSON):
+        For replace_text:
+            {"op": "replace_text", "old_text": "...", "new_text": "...",
+             "replace_all": false, "expected_modified_at": "ISO" (optional)}
+        For replace_section:
+            {"op": "replace_section", "heading": "...", "new_body": "...",
+             "level": 1-6 (optional), "occurrence": 1-based int (optional),
+             "expected_modified_at": "ISO" (optional)}
+
+    Each successful patch creates a new SystemPrompt version (group_id
+    preserved, version=max+1, is_current=True) — same versioning model
+    as sysprompt_save_api. Atomic.
+
+    Responses:
+        200: {"ok": True, "group_id": ..., "version": N,
+              "modified_at": ISO, ...op-specific fields}
+        4xx: {"ok": False, "error": "...", "code": "..."} where code is
+              one of NOT_FOUND, BAD_REQUEST, NO_MATCH, MULTIPLE_MATCHES,
+              HEADING_NOT_FOUND, MULTIPLE_HEADINGS,
+              OCCURRENCE_OUT_OF_RANGE, STALE_PRECONDITION, EMPTY_RESULT.
+    """
+    try:
+        payload = json.loads(request.body or '{}')
+    except json.JSONDecodeError as e:
+        return JsonResponse({'ok': False, 'error': f'invalid JSON: {e}',
+                             'code': 'BAD_REQUEST'}, status=400)
+
+    op = payload.get('op')
+    if op not in ('replace_text', 'replace_section'):
+        return JsonResponse({'ok': False,
+                             'error': "op must be 'replace_text' or 'replace_section'",
+                             'code': 'BAD_REQUEST'}, status=400)
+
+    current = SystemPrompt.objects.filter(group_id=group_id, is_current=True).first()
+    if not current:
+        return JsonResponse({'ok': False,
+                             'error': f'No current sysprompt for group {group_id}',
+                             'code': 'NOT_FOUND'}, status=404)
+
+    expected_modified_at = payload.get('expected_modified_at')
+    if expected_modified_at is not None:
+        current_iso = current.modified_at.isoformat()
+        if current_iso != expected_modified_at:
+            return JsonResponse({
+                'ok': False,
+                'error': 'Sysprompt was modified since expected_modified_at',
+                'code': 'STALE_PRECONDITION',
+                'current_modified_at': current_iso,
+                'expected_modified_at': expected_modified_at,
+            }, status=409)
+
+    existing = current.content or ''
+
+    if op == 'replace_text':
+        old_text = payload.get('old_text')
+        new_text = payload.get('new_text')
+        replace_all = bool(payload.get('replace_all', False))
+        if not old_text:
+            return JsonResponse({'ok': False, 'error': 'old_text is required and cannot be empty',
+                                 'code': 'BAD_REQUEST'}, status=400)
+        if new_text is None:
+            return JsonResponse({'ok': False, 'error': 'new_text is required (use empty string to delete)',
+                                 'code': 'BAD_REQUEST'}, status=400)
+        count = existing.count(old_text)
+        if count == 0:
+            return JsonResponse({'ok': False, 'error': 'old_text not found',
+                                 'code': 'NO_MATCH'}, status=404)
+        if count > 1 and not replace_all:
+            return JsonResponse({'ok': False,
+                                 'error': (f'old_text matched {count} times; pass '
+                                           'replace_all=true or supply more context'),
+                                 'code': 'MULTIPLE_MATCHES', 'count': count}, status=409)
+        if replace_all:
+            new_content = existing.replace(old_text, new_text)
+            replaced = count
+        else:
+            new_content = existing.replace(old_text, new_text, 1)
+            replaced = 1
+        if new_content == existing:
+            return JsonResponse({'ok': False,
+                                 'error': 'old_text and new_text are identical; no change would result',
+                                 'code': 'NOOP_PATCH'}, status=409)
+        if not new_content.strip():
+            return JsonResponse({'ok': False,
+                                 'error': 'Result would be empty content',
+                                 'code': 'EMPTY_RESULT'}, status=400)
+        new = _sp_write_new_version(current, new_content, request.user)
+        return JsonResponse({'ok': True, 'group_id': group_id,
+                             'version': new.version,
+                             'modified_at': new.modified_at.isoformat(),
+                             'replaced_count': replaced,
+                             'content_length': len(new_content)})
+
+    # op == 'replace_section'
+    heading = payload.get('heading')
+    new_body = payload.get('new_body')
+    level = payload.get('level')
+    occurrence = payload.get('occurrence')
+    if not heading:
+        return JsonResponse({'ok': False, 'error': 'heading is required',
+                             'code': 'BAD_REQUEST'}, status=400)
+    if new_body is None:
+        return JsonResponse({'ok': False, 'error': 'new_body is required',
+                             'code': 'BAD_REQUEST'}, status=400)
+    if level is not None and (not isinstance(level, int) or not 1 <= level <= 6):
+        return JsonResponse({'ok': False,
+                             'error': f'level must be int 1-6, got {level!r}',
+                             'code': 'BAD_REQUEST'}, status=400)
+    found = _sp_find_section(existing, heading, level=level, occurrence=occurrence)
+    status_ = found[0]
+    if status_ == 'not_found':
+        msg = f"No heading matching {heading!r}"
+        if level is not None:
+            msg += f" at level {level}"
+        return JsonResponse({'ok': False, 'error': msg,
+                             'code': 'HEADING_NOT_FOUND'}, status=404)
+    if status_ == 'multiple':
+        return JsonResponse({'ok': False,
+                             'error': (f'Found {found[1]} headings matching {heading!r}; '
+                                       'specify level or occurrence'),
+                             'code': 'MULTIPLE_HEADINGS', 'count': found[1]}, status=409)
+    if status_ == 'out_of_range':
+        return JsonResponse({'ok': False,
+                             'error': (f'occurrence out of range: only {found[1]} '
+                                       'matching heading(s) exist'),
+                             'code': 'OCCURRENCE_OUT_OF_RANGE', 'count': found[1]}, status=400)
+    _, h_idx, b_start, b_end, _total = found
+    lines = existing.split('\n')
+    new_lines = lines[:b_start] + new_body.split('\n') + lines[b_end:]
+    new_content = '\n'.join(new_lines)
+    if new_content == existing:
+        return JsonResponse({'ok': False,
+                             'error': 'new_body matches the existing section body; no change would result',
+                             'code': 'NOOP_PATCH'}, status=409)
+    if not new_content.strip():
+        return JsonResponse({'ok': False, 'error': 'Result would be empty content',
+                             'code': 'EMPTY_RESULT'}, status=400)
+    new = _sp_write_new_version(current, new_content, request.user)
+    return JsonResponse({'ok': True, 'group_id': group_id,
+                         'version': new.version,
+                         'modified_at': new.modified_at.isoformat(),
+                         'section_lines_replaced': b_end - b_start,
+                         'heading_line_index': h_idx,
+                         'content_length': len(new_content)})
+
+
 @require_POST
 @login_required
 def sysprompt_delete(request, group_id):

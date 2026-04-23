@@ -23,6 +23,7 @@ urlpatterns = [
     path('_fragment/sysprompt/<uuid:group_id>/edit/', views.sysprompt_edit_frag, name='sysprompt_edit_frag'),
     path('_fragment/sysprompt/new/', views.sysprompt_edit_frag, name='sysprompt_new_frag'),
     path('_api/sysprompt/save/', views.sysprompt_save_api, name='sysprompt_save_api'),
+    path('_api/sysprompt/<uuid:group_id>/patch/', views.sysprompt_patch_api, name='sysprompt_patch_api'),
     path('_api/sysprompt/<uuid:group_id>/delete/', views.sysprompt_delete, name='sysprompt_delete'),
     path('prompts/', views.prompts_view, name='prompts'),
     path('_fragment/prompt-view/<uuid:group_id>/', views.prompt_view_frag, name='prompt_view_frag'),
