@@ -14,7 +14,7 @@
         </div>
         <div class="browse-list" id="def-list" tabindex="0">
             {% for d in definitions %}
-            <div class="browse-item" data-id="{{ d.id }}" tabindex="-1" onclick="loadDefDetail('{{ d.id }}')">
+            <div class="browse-item" data-id="{{ d.id }}" data-name="{{ d.name }}" tabindex="-1" onclick="loadDefDetail(this)">
                 <div class="browse-item-title">{{ d.name }}</div>
                 <div class="browse-item-meta">{{ d.data.model|default:"sonnet" }} · {{ d.data.effort|default:"high" }} · {{ d.modified_at|date:"M j H:i" }}{% if d.data.mcp_tools %} · {{ d.data.mcp_tools|join:", " }}{% endif %}</div>
             </div>
@@ -47,9 +47,14 @@ function setHTML(container, html) {
     });
 }
 
-function loadDefDetail(defId) {
+function loadDefDetail(item) {
+    const defId = item.dataset.id;
+    const defName = item.dataset.name;
     document.querySelectorAll('.browse-item').forEach(i => i.classList.remove('selected'));
-    event.currentTarget.classList.add('selected');
+    item.classList.add('selected');
+    const params = new URLSearchParams(window.location.search);
+    params.set('select', defName);
+    history.replaceState(null, '', window.location.pathname + '?' + params.toString());
     fetch('{% url "codoc:definition_fragment" "00000000-0000-0000-0000-000000000000" %}'.replace('00000000-0000-0000-0000-000000000000', defId))
         .then(r => r.text()).then(html => { setHTML(document.getElementById('def-detail-body'), html); });
 }
@@ -107,7 +112,9 @@ function copyDef(defId) {
 const selectParam = new URLSearchParams(window.location.search).get('select');
 let startIdx = 0;
 if (selectParam) {
-    defItems.forEach((item, idx) => { if (item.dataset.id === selectParam) startIdx = idx; });
+    defItems.forEach((item, idx) => {
+        if (item.dataset.name === selectParam || item.dataset.id === selectParam) startIdx = idx;
+    });
 }
 if (defItems.length > 0) selectDefItem(startIdx);
 </script>
