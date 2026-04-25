@@ -21,7 +21,9 @@ Usage:
 
 Optional flags:
     --mcp-config PATH        path to .mcp.json (default: ./.mcp.json)
-    --max-tokens N           per-call max output tokens (default 8192)
+    --max-tokens N           optional per-call max output tokens; default
+                             is to omit the field entirely so DeepSeek's
+                             server-side limit applies (no client-side cap)
     --max-iterations N       cap on tool-use turns (default 20)
     --timeout SEC            per-API-call timeout (default 3600)
 """
@@ -168,7 +170,20 @@ class McpClient:
 
 
 async def run_agent_loop(args, user_prompt: str, mcp: McpClient) -> str:
-    """Drive the DeepSeek tool-use loop and return the final text."""
+    """Drive the DeepSeek tool-use loop and return the final text.
+
+    Three terminal stop_reason values are handled:
+      - 'tool_use'    → execute the requested tools, append tool_result
+                        blocks, loop.
+      - 'max_tokens'  → response was truncated mid-generation. Append a
+                        continuation prompt asking the model to resume
+                        from exactly where it left off; accumulate text
+                        across continuations and return the concatenation
+                        when the model finally stops naturally. NEVER
+                        silently drop the truncated tail — that is a
+                        fix-don't-hide violation.
+      - 'end_turn' (or other non-tool, non-truncation) → final answer.
+    """
     client = Anthropic(
         api_key=os.environ['DEEPSEEK_API_KEY'],
         base_url='https://api.deepseek.com/anthropic',
@@ -177,13 +192,19 @@ async def run_agent_loop(args, user_prompt: str, mcp: McpClient) -> str:
 
     messages: list[dict[str, Any]] = [
         {'role': 'user', 'content': user_prompt}]
+    accumulated_chunks: list[str] = []  # text from prior max_tokens turns
 
-    for iteration in range(1, args.max_iterations + 1):
+    iteration = 0
+    while True:
+        iteration += 1
         _log(f"DeepSeek call {iteration} ({args.model}, "
              f"{len(messages)} msgs, {len(mcp.tools)} tools)...")
 
         kwargs: dict[str, Any] = {
             'model': args.model,
+            # Omit max_tokens from the request body when not supplied —
+            # DeepSeek enforces its own server-side cap. NOT_GIVEN is the
+            # anthropic SDK sentinel that skips a param in the HTTP body.
             'max_tokens': args.max_tokens,
             'system': args.system_prompt,
             'messages': messages,
@@ -220,36 +241,60 @@ async def run_agent_loop(args, user_prompt: str, mcp: McpClient) -> str:
 
         messages.append({'role': 'assistant', 'content': assistant_blocks})
 
-        if response.stop_reason != 'tool_use':
-            text = ''.join(
-                b['text'] for b in assistant_blocks if b['type'] == 'text'
-            ).strip()
-            _log(f"DeepSeek: stop_reason={response.stop_reason!r}, "
-                 f"final text {len(text)} chars")
-            return text
+        text_this_turn = ''.join(
+            b['text'] for b in assistant_blocks if b['type'] == 'text')
 
         # tool_use — execute calls and append results
-        tool_uses = [b for b in assistant_blocks if b['type'] == 'tool_use']
-        _log(f"DeepSeek: {len(tool_uses)} tool call(s) requested")
+        if response.stop_reason == 'tool_use':
+            tool_uses = [b for b in assistant_blocks if b['type'] == 'tool_use']
+            _log(f"DeepSeek: stop_reason='tool_use', "
+                 f"{len(tool_uses)} tool call(s) requested")
+            tool_results: list[dict[str, Any]] = []
+            for tu in tool_uses:
+                text, is_err = await mcp.call(tu['name'], tu['input'] or {})
+                preview = text[:80].replace('\n', ' ')
+                _log(f"  tool {tu['name']}({json.dumps(tu['input'])[:80]}) "
+                     f"-> {'ERR ' if is_err else ''}{preview}...")
+                block: dict[str, Any] = {
+                    'type': 'tool_result',
+                    'tool_use_id': tu['id'],
+                    'content': text,
+                }
+                if is_err:
+                    block['is_error'] = True
+                tool_results.append(block)
+            messages.append({'role': 'user', 'content': tool_results})
+            continue
 
-        tool_results: list[dict[str, Any]] = []
-        for tu in tool_uses:
-            text, is_err = await mcp.call(tu['name'], tu['input'] or {})
-            preview = text[:80].replace('\n', ' ')
-            _log(f"  tool {tu['name']}({json.dumps(tu['input'])[:80]}) "
-                 f"-> {'ERR ' if is_err else ''}{preview}...")
-            block: dict[str, Any] = {
-                'type': 'tool_result',
-                'tool_use_id': tu['id'],
-                'content': text,
-            }
-            if is_err:
-                block['is_error'] = True
-            tool_results.append(block)
-        messages.append({'role': 'user', 'content': tool_results})
+        # max_tokens — response truncated mid-generation. Save partial,
+        # ask for continuation. NEVER drop the tail silently.
+        if response.stop_reason == 'max_tokens':
+            _log(f"DeepSeek: stop_reason='max_tokens' at iter {iteration} "
+                 f"(partial text {len(text_this_turn)}c, "
+                 f"max_tokens={args.max_tokens}); requesting continuation "
+                 f"to recover full response. Continuation #"
+                 f"{len(accumulated_chunks) + 1}.")
+            accumulated_chunks.append(text_this_turn)
+            messages.append({
+                'role': 'user',
+                'content': (
+                    'Your previous response hit the per-call max_tokens '
+                    'limit and was truncated mid-output. Continue from '
+                    'exactly where you left off — do not repeat or '
+                    'summarize what you already wrote, just resume. The '
+                    'two halves will be concatenated verbatim, so resume '
+                    'mid-sentence if that is where the cut was.'
+                ),
+            })
+            continue
 
-    raise RuntimeError(
-        f"Hit max_iterations={args.max_iterations} without a final response")
+        # end_turn (or other non-tool, non-truncation) — final response
+        final = ''.join(accumulated_chunks + [text_this_turn]).strip()
+        _log(f"DeepSeek: stop_reason={response.stop_reason!r}, "
+             f"final text {len(final)}c "
+             f"({len(accumulated_chunks)} continuation(s) accumulated)")
+        return final
+
 
 
 async def amain() -> int:
@@ -260,8 +305,18 @@ async def amain() -> int:
     parser.add_argument('--system-prompt', required=True)
     parser.add_argument('--mcp-config', default='.mcp.json',
                         help='Path to .mcp.json (default: ./.mcp.json)')
-    parser.add_argument('--max-tokens', type=int, default=8192)
-    parser.add_argument('--max-iterations', type=int, default=20)
+    # max_tokens defaults to DeepSeek V4's own documented maximum (384,000
+    # output tokens, per api-docs.deepseek.com/quick_start/pricing — same
+    # for both flash and pro). DeepSeek's Anthropic-compat endpoint REQUIRES
+    # max_tokens in the request body — omitting via NOT_GIVEN returns
+    # HTTP 400 "missing field `max_tokens`" — so the field cannot be
+    # absent. Setting it to the model's own ceiling is the closest
+    # equivalent to "no client-side cap": the model's spec is the only
+    # ceiling in effect.
+    parser.add_argument('--max-tokens', type=int, default=384000)
+    # No iteration cap. The agent loop runs until the model emits a
+    # non-tool-use stop_reason. The worker-level job timeout is the only
+    # bound on total runtime.
     parser.add_argument('--timeout', type=int, default=3600)
     args = parser.parse_args()
 

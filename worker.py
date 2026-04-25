@@ -79,7 +79,7 @@ def _tjai_request(method, path, body=None, timeout=15):
     except urllib.error.HTTPError as e:
         detail = ''
         try:
-            detail = e.read().decode('utf-8')[:300]
+            detail = e.read().decode('utf-8')
         except Exception:
             pass
         raise RuntimeError(f'tjai {method} {path} HTTP {e.code}: {detail}') from e
@@ -536,7 +536,7 @@ class Worker:
                     continue
                 if status == 'failed':
                     err = state.get('error') or 'unknown error'
-                    self._finish_job(rj, 'failed', f'Remotefailed: {err[:300]}')
+                    self._finish_job(rj, 'failed', f'Remotefailed: {err}')
                     continue
 
                 # Still queued/running — check overall timeout
@@ -583,15 +583,15 @@ class Worker:
                         self._complete_job(rj, stdout.strip(), elapsed, stderr=stderr)
                     else:
                         self._finish_job(rj, 'failed',
-                                         f'Gemini produced no output (rc={retcode}, stderr: {stderr[:200]})')
+                                         f'Gemini produced no output (rc={retcode}, stderr: {stderr})')
                 elif retcode == 0 and stdout.strip():
                     self._complete_job(rj, stdout.strip(), elapsed, stderr=stderr)
                 elif retcode == 0:
                     self._finish_job(rj, 'failed',
-                                     f'CLI returned empty output (stderr: {stderr[:200]})')
+                                     f'CLI returned empty output (stderr: {stderr})')
                 else:
                     self._finish_job(rj, 'failed',
-                                     f'CLI exited {retcode}: {stderr[:300]}')
+                                     f'CLI exited {retcode}: {stderr}')
                 continue
 
             # Timeout?
