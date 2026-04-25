@@ -75,6 +75,14 @@ DATABASES = {
 # override via CORUN_TJAI_BASE_URL if tjai is moved.
 TJAI_BASE_URL = config('CORUN_TJAI_BASE_URL', default='http://127.0.0.1:8002')
 
+# DeepSeek V4 API key — used by codoc_app/deepseek_runner.py for jobs
+# whose JobDefinition.model is in DEEPSEEK_MODELS. The runner calls
+# DeepSeek's Anthropic-compat endpoint (https://api.deepseek.com/anthropic).
+# Empty default keeps Django importable without the key set; the worker
+# only injects it into the runner subprocess env when actually dispatching
+# a DeepSeek job, and the runner errors out cleanly if it's missing.
+DEEPSEEK_API_KEY = config('DEEPSEEK_API_KEY', default='')
+
 LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'America/New_York'
 USE_I18N = True

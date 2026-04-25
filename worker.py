@@ -33,7 +33,8 @@ from django.conf import settings as dj_settings
 from django.utils import timezone
 
 from corun_app.models import (
-    AppLog, GEMINI_MODELS, REMOTE_MODELS, Job, JobDefinition, Page, Prompt, SystemPrompt,
+    AppLog, DEEPSEEK_MODELS, GEMINI_MODELS, REMOTE_MODELS,
+    Job, JobDefinition, Page, Prompt, SystemPrompt,
 )
 
 logger = logging.getLogger('corun.worker')
@@ -337,6 +338,21 @@ class Worker:
                 '-p', combined,
             ]
             use_gemini = True
+        elif model in DEEPSEEK_MODELS:
+            # DeepSeek V4 via Anthropic-compat endpoint — no CLI exists,
+            # so we spawn a small Python wrapper that calls the API and
+            # writes plain text to stdout. The worker reads stdout the
+            # same way it does for claude -p (no use_gemini flag).
+            # MCP tools are not wired in for DeepSeek (text-only), same
+            # situation as the gemini-cli branch.
+            runner = '/var/www/corun-ai/.venv/bin/python'
+            runner_script = '/var/www/corun-ai/src/codoc_app/deepseek_runner.py'
+            cmd = [
+                runner, runner_script,
+                '--model', model,
+                '--system-prompt', system_prompt.content,
+                '--timeout', str(timeout),
+            ]
         else:
             claude_path = _find_claude()
             cmd = [
@@ -377,6 +393,20 @@ class Worker:
             'TJAI_ACTION_ID': 'codoc-generate',
             'NODE_EXTRA_CA_CERTS': '/etc/pki/tls/certs/ca-bundle.crt',
         }
+        # DeepSeek runs need DEEPSEEK_API_KEY in the subprocess env. Read
+        # from Django settings (loaded from .env via python-decouple) and
+        # inject only for DeepSeek dispatches — other branches don't need
+        # it and we keep the env minimal by default. Deliberately do NOT
+        # include ANTHROPIC_API_KEY here: the anthropic SDK would pick
+        # that up first and route to Anthropic instead of DeepSeek.
+        if model in DEEPSEEK_MODELS:
+            ds_key = getattr(dj_settings, 'DEEPSEEK_API_KEY', '')
+            if not ds_key:
+                raise RuntimeError(
+                    "DEEPSEEK_API_KEY is empty in settings — set it in "
+                    "src/.env (DEEPSEEK_API_KEY=...) and restart the worker"
+                )
+            env['DEEPSEEK_API_KEY'] = ds_key
 
         job.status = 'running'
         job_data_update = {

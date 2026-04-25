@@ -3,3 +3,5 @@ python-decouple>=3.8
 psycopg[binary]>=3.1
 markdown>=3.7
 beautifulsoup4>=4.12
+anthropic>=0.88
+mcp>=1.27

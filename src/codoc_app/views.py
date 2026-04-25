@@ -825,7 +825,8 @@ def definition_fragment(request, pk):
         sp = SystemPrompt.objects.filter(group_id=sp_gid, is_current=True).first()
     sysprompts = SystemPrompt.objects.filter(is_current=True)
     from corun_app.models import (
-        GEMINI_MODELS, REMOTE_MODELS, MCP_SERVERS, REMOTE_EXTRA_MCP_LABELS,
+        DEEPSEEK_MODELS, GEMINI_MODELS, REMOTE_MODELS,
+        MCP_SERVERS, REMOTE_EXTRA_MCP_LABELS,
     )
     # Resolve MCP tool keys to labels. Look in MCP_SERVERS first (local-
     # execution registry), then fall back to REMOTE_EXTRA_MCP_LABELS for
@@ -849,6 +850,11 @@ def definition_fragment(request, pk):
         )
     elif model in GEMINI_MODELS:
         d.data['cli_preview'] = f'gemini -m {model} --yolo -p "<prompt>"'
+    elif model in DEEPSEEK_MODELS:
+        d.data['cli_preview'] = (
+            f'deepseek_runner.py --model {model} '
+            f'(Anthropic-compat endpoint, text-only, no MCP tools)'
+        )
     else:
         mcp_part = ' --mcp-config .mcp.json --allowedTools "mcp__*"' if d.data.get('mcp_tools') else ''
         d.data['cli_preview'] = (
