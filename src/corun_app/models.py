@@ -15,9 +15,12 @@ from django.conf import settings
 # remote worker via tjai's /api/work/submit endpoint. The set of such
 # families is REMOTE_MODELS below.
 MODEL_CHOICES = [
-    ('opus', 'Opus', 'Claude'),
-    ('sonnet', 'Sonnet', 'Claude'),
-    ('haiku', 'Haiku', 'Claude'),
+    ('opus', 'Opus (latest)', 'Claude'),
+    ('claude-opus-4-7', 'Opus 4.7 (pinned)', 'Claude'),
+    ('sonnet', 'Sonnet (latest)', 'Claude'),
+    ('claude-sonnet-4-6', 'Sonnet 4.6 (pinned)', 'Claude'),
+    ('haiku', 'Haiku (latest)', 'Claude'),
+    ('claude-haiku-4-5', 'Haiku 4.5 (pinned)', 'Claude'),
     ('gemini-2.5-flash', 'Gemini 2.5 Flash', 'Gemini'),
     ('gemini-2.5-pro', 'Gemini 2.5 Pro', 'Gemini'),
     ('deepseek-v4-flash', 'DeepSeek V4 Flash', 'DeepSeek'),
