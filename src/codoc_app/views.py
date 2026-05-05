@@ -1630,14 +1630,24 @@ def snippets_file_api(request):
     contents API. The `path` query parameter is required.
 
     Returns {'content': '<text>', 'encoding': 'utf-8'} on success, or
-    {'error': '...'} on failure.
+    {'error': '...'} on failure.  Binary/image files return {'binary': true}.
     """
     import base64
     from .snippets_cache import load_cache as _load_snippets_cache
 
+    _BINARY_EXTENSIONS = frozenset({
+        'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'svg', 'ico', 'tiff',
+        'pdf', 'zip', 'tar', 'gz', 'bz2', 'xz', 'o', 'a', 'so', 'dylib',
+        'exe', 'bin', 'pyc', 'root',
+    })
+
     path = request.GET.get('path', '').strip()
     if not path:
         return JsonResponse({'error': 'path parameter required'}, status=400)
+
+    ext = path.rsplit('.', 1)[-1].lower() if '.' in path else ''
+    if ext in _BINARY_EXTENSIONS:
+        return JsonResponse({'binary': True})
 
     # Validate against the trusted cache: only serve files we fetched from GitHub.
     # This also breaks the taint chain — safe_path comes from our cache, not the request.
