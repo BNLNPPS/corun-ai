@@ -1568,17 +1568,27 @@ def snippets_api(request):
     # Tag files with whether a codoc snippet review has been completed for them.
     # "Reviewed" = at least one completed codoc-snippet-review Job whose linked
     # Prompt content references the file's GitHub URL.
+    # Also track the most-recent review page URL per path for use in PR prompts.
     snippet_review_def = JobDefinition.objects.filter(name='codoc-snippet-review').first()
     reviewed_paths: set[str] = set()
+    review_page_urls: dict[str, str] = {}
     if snippet_review_def:
         for j in Job.objects.filter(
             definition=snippet_review_def, status='completed', prompt__isnull=False,
-        ).select_related('prompt'):
+        ).select_related('prompt').order_by('created_at'):
+            page_group = j.data.get('result_page_group_id')
             for m in _SNIPPETS_URL_PATH_RE.finditer(j.prompt.content or ''):
-                reviewed_paths.add(m.group(1))
+                path_key = m.group(1)
+                reviewed_paths.add(path_key)
+                if page_group:
+                    review_page_urls[path_key] = request.build_absolute_uri(
+                        f'/doc/page/{page_group}/'
+                    )
 
     for f in data.get('files') or []:
         f['reviewed'] = f.get('path') in reviewed_paths
+        if f.get('path') in review_page_urls:
+            f['review_page_url'] = review_page_urls[f['path']]
 
     return JsonResponse(data)
 
@@ -1683,13 +1693,19 @@ def snippets_file_api(request):
 
 def snippets_view(request):
     """Render the snippets browser page."""
-    from .generate import get_or_create_snippet_review_def, DEFAULT_SNIPPET_REVIEW_PROMPT_TEMPLATE
+    from .generate import (
+        get_or_create_snippet_review_def, DEFAULT_SNIPPET_REVIEW_PROMPT_TEMPLATE,
+        get_or_create_snippet_pr_def, DEFAULT_SNIPPET_PR_PROMPT_TEMPLATE,
+    )
     sec = Section.objects.filter(name='snippet-review', status='active').first()
-    jdef = get_or_create_snippet_review_def()
+    jdef_review = get_or_create_snippet_review_def()
+    jdef_pr = get_or_create_snippet_pr_def()
     return render(request, 'codoc_app/snippets.html', {
         'snippet_review_section_id': sec.id if sec else '',
-        'snippet_review_definition_id': str(jdef.id),
+        'snippet_review_definition_id': str(jdef_review.id),
         'snippet_review_prompt_template': DEFAULT_SNIPPET_REVIEW_PROMPT_TEMPLATE,
+        'snippet_pr_definition_id': str(jdef_pr.id),
+        'snippet_pr_prompt_template': DEFAULT_SNIPPET_PR_PROMPT_TEMPLATE,
     })
 
 

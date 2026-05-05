@@ -176,6 +176,112 @@ forming your assessment.
 """
 
 
+def get_or_create_snippet_pr_def():
+    """Get or create the codoc-snippet-pr job definition with its system prompt."""
+    job_def = JobDefinition.objects.filter(name='codoc-snippet-pr').first()
+    if job_def:
+        return job_def
+
+    sp_group = uuid.uuid4()
+    sp = SystemPrompt.objects.create(
+        group_id=sp_group,
+        version=1,
+        is_current=True,
+        name='codoc-snippet-pr',
+        content=DEFAULT_SNIPPET_PR_SYSTEM_PROMPT,
+        data={'description': 'System prompt for ePIC snippet review + draft PR generation'},
+    )
+
+    job_def = JobDefinition.objects.create(
+        name='codoc-snippet-pr',
+        description='Review an eic/snippets file and create a draft GitHub PR with improvements',
+        data={
+            'system_prompt_group_id': str(sp.group_id),
+            'model': 'sonnet',
+            'effort': 'high',
+            'mcp_tools': ['lxr', 'github'],
+        },
+    )
+    return job_def
+
+
+DEFAULT_SNIPPET_PR_SYSTEM_PROMPT = """\
+You are an automated code improvement agent for the ePIC experiment at the \
+Electron-Ion Collider (EIC). Your task is to review a code snippet from the \
+eic/snippets repository and then create a draft GitHub pull request that applies \
+concrete improvements.
+
+**Phase 1 — Review**
+
+Use the LXR Code Browser MCP tools to research current best practices:
+- lxr_ident: look up where symbols are defined and used across EIC repositories
+- lxr_search: search for usage patterns and current API idioms
+- lxr_source: read actual source files to verify correctness
+- lxr_list: browse directory structure
+
+Produce a thorough review covering:
+1. Correctness against current DD4hep, ACTS, EICrecon, and other active EIC \
+framework versions
+2. What works well and should be kept as a good example
+3. Specific issues (severity: critical / major / minor) with explanations
+4. Concrete recommended changes with corrected code
+
+**Phase 2 — Create Draft PR**
+
+After completing the review, use GitHub MCP tools to create a draft pull request \
+against eic/snippets:
+
+1. Use `create_branch` to create a branch named \
+`snippet-update/<basename>-<YYYYMMDD>` in the `eic/snippets` repository \
+(base branch: `main`).
+
+2. Use `create_or_update_file` for every file that needs to change — \
+the snippet file itself and any related files at the same directory level or \
+deeper in the hierarchy. Provide the full corrected content for each file.
+
+3. Use `create_pull_request` with:
+   - `owner`: `eic`, `repo`: `snippets`
+   - `title`: `Update <filename>: <concise description of the main improvement>`
+   - `body`: the full review text from Phase 1, followed by a "Changes Made" \
+section listing each modified file and what was changed. If a corun-ai review \
+page URL was supplied in the prompt, append a line: \
+"Reviewed by corun-ai: <url>"
+   - `draft`: `true`
+   - `head`: the branch you just created
+   - `base`: `main`
+
+Always create draft PRs. Never push to main directly. \
+If the GitHub tools are unavailable, still complete Phase 1 and output the \
+full review plus the exact file contents you would have committed, \
+clearly labelled per file.
+"""
+
+
+DEFAULT_SNIPPET_PR_PROMPT_TEMPLATE = """\
+Please review this code snippet and then create a draft GitHub PR with improvements.
+
+File: {path}
+GitHub: {gh_url}
+{review_section}
+```
+{content}
+```
+
+**Instructions:**
+1. Use lxr_* tools to research current ePIC best practices for the APIs and \
+patterns used in this snippet.
+2. Write a thorough review (Summary / What Works / Issues Found / Recommended \
+Updates).
+3. Apply the improvements: update this file and any related files at the same \
+directory level or deeper that need to change.
+4. Create a draft PR against eic/snippets using the GitHub MCP tools:
+   - Branch: `snippet-update/{basename}-<YYYYMMDD>`
+   - Title: `Update {basename}: <concise description>`
+   - PR body: full review + list of changes + corun-ai review link (if provided above)
+   - Mark as draft
+"""
+
+
 DEFAULT_SYSTEM_PROMPT = """\
 You are a technical documentation writer for the ePIC experiment at the \
 Electron-Ion Collider (EIC). You produce clear, well-structured documentation \

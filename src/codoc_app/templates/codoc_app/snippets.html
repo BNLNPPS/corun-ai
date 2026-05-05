@@ -35,6 +35,10 @@
 .snip-action-btn { font-size: 12px; padding: 4px 12px; border: 1px solid var(--border); background: var(--card-bg); color: var(--accent); cursor: pointer; font-family: inherit; border-radius: 3px; text-decoration: none; display: inline-block; }
 .snip-action-btn:hover { border-color: var(--accent); background: var(--selected); text-decoration: none; }
 .snip-gh-btn { color: var(--text); }
+.snip-pr-btn { color: #c084fc; border-color: #7e22ce44; }
+.snip-pr-btn:hover { border-color: #c084fc; }
+.light .snip-pr-btn { color: #7c3aed; border-color: #7c3aed44; }
+.light .snip-pr-btn:hover { border-color: #7c3aed; }
 .snip-reviewed-label { font-size: 12px; background: #14532d; color: #bbf7d0; padding: 3px 8px; border-radius: 3px; }
 .light .snip-reviewed-label { background: #dcfce7; color: #166534; }
 .snip-detail-body { flex: 1; overflow-y: auto; padding: 14px 18px; }
@@ -50,6 +54,8 @@ body.light .snip-file-content { color: #1a1a1a; }
         window._SNIPPET_REVIEW_SECTION_ID = "{{ snippet_review_section_id|default:'' }}";
         window._SNIPPET_REVIEW_DEFINITION_ID = "{{ snippet_review_definition_id|default:'' }}";
         window._SNIPPET_REVIEW_PROMPT_TEMPLATE = "{{ snippet_review_prompt_template|default:''|escapejs }}";
+        window._SNIPPET_PR_DEFINITION_ID = "{{ snippet_pr_definition_id|default:'' }}";
+        window._SNIPPET_PR_PROMPT_TEMPLATE = "{{ snippet_pr_prompt_template|default:''|escapejs }}";
     </script>
 
     <!-- Left: tree panel -->
@@ -190,6 +196,24 @@ function buildReviewHref(path, ghUrl, content) {
         + '&content=' + encodeURIComponent(promptContent);
 }
 
+function buildPrHref(path, ghUrl, content, reviewPageUrl) {
+    const tpl = window._SNIPPET_PR_PROMPT_TEMPLATE || '';
+    const basename = path.split('/').pop() || path;
+    const reviewSection = reviewPageUrl
+        ? 'Existing review on corun-ai: ' + reviewPageUrl + '\n'
+        : '';
+    const promptContent = tpl
+        .replace('{path}', path)
+        .replace('{gh_url}', ghUrl)
+        .replace('{basename}', basename)
+        .replace('{review_section}', reviewSection)
+        .replace('{content}', content || '');
+    return '{% url "codoc:prepare" %}'
+        + '?section_id=' + encodeURIComponent(window._SNIPPET_REVIEW_SECTION_ID)
+        + '&definition_id=' + encodeURIComponent(window._SNIPPET_PR_DEFINITION_ID)
+        + '&content=' + encodeURIComponent(promptContent);
+}
+
 function showDetail(path) {
     const detail = document.getElementById('snip-detail');
     const files = _snippetData ? _snippetData.files || [] : [];
@@ -203,6 +227,7 @@ function showDetail(path) {
 
     const reviewedBadge = f.reviewed
         ? '<span class="snip-reviewed-label">✓ reviewed</span>' : '';
+    const reviewPageUrl = f.review_page_url || '';
 
     detail.innerHTML =
         '<div class="snip-detail-header">' +
@@ -214,6 +239,7 @@ function showDetail(path) {
             '</div>' +
             '<div class="snip-detail-actions">' +
                 '<a class="snip-action-btn" id="snip-review-link" href="' + buildReviewHref(f.path, ghUrl, '') + '">Submit snippet review</a>' +
+                '<a class="snip-action-btn snip-pr-btn" id="snip-pr-link" href="' + buildPrHref(f.path, ghUrl, '', reviewPageUrl) + '">Review + generate PR</a>' +
                 '<a class="snip-action-btn snip-gh-btn" href="' + ghUrl + '" target="_blank">View on GitHub</a>' +
                 reviewedBadge +
             '</div>' +
@@ -223,10 +249,10 @@ function showDetail(path) {
             '<pre class="snip-file-content" id="snip-file-content" style="display:none"></pre>' +
         '</div>';
 
-    fetchFileContent(path, ghUrl);
+    fetchFileContent(path, ghUrl, reviewPageUrl);
 }
 
-function fetchFileContent(path, ghUrl) {
+function fetchFileContent(path, ghUrl, reviewPageUrl) {
     const url = '{% url "codoc:snippets_file_api" %}?path=' + encodeURIComponent(path);
     fetch(url)
         .then(r => r.json())
@@ -238,13 +264,21 @@ function fetchFileContent(path, ghUrl) {
                 status.textContent = 'Error: ' + data.error;
                 return;
             }
+            if (data.binary) {
+                status.textContent = '(binary file — preview not available)';
+                return;
+            }
             status.style.display = 'none';
             pre.textContent = data.content;
             pre.style.display = 'block';
-            // Update the review link with the full file content in the prompt.
-            const link = document.getElementById('snip-review-link');
-            if (link && ghUrl) {
-                link.href = buildReviewHref(path, ghUrl, data.content);
+            // Update both action links with the full file content in the prompt.
+            const reviewLink = document.getElementById('snip-review-link');
+            if (reviewLink && ghUrl) {
+                reviewLink.href = buildReviewHref(path, ghUrl, data.content);
+            }
+            const prLink = document.getElementById('snip-pr-link');
+            if (prLink && ghUrl) {
+                prLink.href = buildPrHref(path, ghUrl, data.content, reviewPageUrl || '');
             }
         })
         .catch(err => {
