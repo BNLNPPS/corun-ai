@@ -1,0 +1,322 @@
+{% extends "codoc_app/base.html" %}
+{% block title %}ePIC Snippets{% endblock %}
+
+{% block extra_css %}
+.snippets-wrap { display: flex; gap: 0; height: calc(100vh - 42px); overflow: hidden; }
+.snip-tree-panel { flex: 0 0 320px; display: flex; flex-direction: column; border-right: 1px solid var(--border); overflow: hidden; }
+.snip-tree-header { padding: 12px 14px 8px; flex-shrink: 0; }
+.snip-tree-header h1 { font-size: 1.1em; margin-bottom: 0.2em; }
+.snip-tree-search { width: 100%; padding: 5px 9px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px; background: var(--card-bg); color: var(--text); margin-top: 6px; }
+.snip-status-bar { display: flex; justify-content: space-between; align-items: center; padding: 4px 14px 6px; font-size: 11px; color: var(--grey); flex-shrink: 0; border-bottom: 1px solid var(--border); }
+.snip-update-btn { font-size: 11px; padding: 2px 8px; border: 1px solid var(--border); background: var(--card-bg); color: var(--text); cursor: pointer; font-family: inherit; border-radius: 3px; }
+.snip-update-btn:hover { border-color: var(--accent); }
+.snip-update-btn:disabled { color: var(--grey); cursor: not-allowed; }
+.snip-tree { flex: 1; overflow-y: auto; padding: 6px 0; }
+.snip-dir { padding: 4px 10px; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 5px; color: var(--accent); font-weight: 600; user-select: none; }
+.snip-dir:hover { background: var(--code-bg); }
+.snip-dir-icon { font-size: 10px; display: inline-block; width: 12px; transition: transform 0.15s; flex-shrink: 0; }
+.snip-dir-icon.open { transform: rotate(90deg); }
+.snip-dir-children { display: none; }
+.snip-dir-children.open { display: block; }
+.snip-file { padding: 3px 10px 3px 28px; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 5px; color: var(--text); }
+.snip-file:hover { background: var(--code-bg); }
+.snip-file.selected { background: var(--selected); border-left: 3px solid var(--selected-border); padding-left: 25px; }
+.snip-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.snip-reviewed-badge { font-size: 10px; background: #14532d; color: #bbf7d0; padding: 1px 5px; border-radius: 3px; flex-shrink: 0; }
+.light .snip-reviewed-badge { background: #dcfce7; color: #166534; }
+.snip-loading { color: var(--grey); font-style: italic; padding: 10px 14px; font-size: 12px; }
+
+.snip-detail-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.snip-detail-empty { display: flex; align-items: center; justify-content: center; flex: 1; color: var(--grey); font-style: italic; font-size: 14px; }
+.snip-detail-header { padding: 12px 18px 8px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.snip-detail-path { font-size: 13px; font-weight: 600; color: var(--text); word-break: break-all; }
+.snip-detail-meta { font-size: 12px; color: var(--grey); margin-top: 4px; }
+.snip-detail-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; align-items: center; }
+.snip-action-btn { font-size: 12px; padding: 4px 12px; border: 1px solid var(--border); background: var(--card-bg); color: var(--accent); cursor: pointer; font-family: inherit; border-radius: 3px; text-decoration: none; display: inline-block; }
+.snip-action-btn:hover { border-color: var(--accent); background: var(--selected); text-decoration: none; }
+.snip-gh-btn { color: var(--text); }
+.snip-reviewed-label { font-size: 12px; background: #14532d; color: #bbf7d0; padding: 3px 8px; border-radius: 3px; }
+.light .snip-reviewed-label { background: #dcfce7; color: #166534; }
+.snip-detail-body { flex: 1; overflow-y: auto; padding: 14px 18px; }
+.snip-file-content { background: var(--code-bg); border: 1px solid var(--border); border-radius: 4px; padding: 12px 14px; font-family: 'SF Mono', 'Monaco', 'Menlo', 'Consolas', monospace; font-size: 12px; line-height: 1.5; color: #f0c0c0; white-space: pre; overflow-x: auto; }
+body.light .snip-file-content { color: #1a1a1a; }
+.snip-content-loading { color: var(--grey); font-style: italic; padding: 10px 0; font-size: 13px; }
+{% endblock %}
+
+{% block page %}
+<div class="snippets-wrap">
+    {% csrf_token %}
+    <script>
+        window._SNIPPET_REVIEW_SECTION_ID = "{{ snippet_review_section_id|default:'' }}";
+        window._SNIPPET_REVIEW_DEFINITION_ID = "{{ snippet_review_definition_id|default:'' }}";
+    </script>
+
+    <!-- Left: tree panel -->
+    <div class="snip-tree-panel">
+        <div class="snip-tree-header">
+            <h1>ePIC Snippets</h1>
+            <p style="font-size:12px;color:var(--grey);margin-top:2px"><a href="https://github.com/eic/snippets" target="_blank">github.com/eic/snippets</a></p>
+            <input type="search" class="snip-tree-search" placeholder="Filter files…" id="snip-search" oninput="filterTree(this.value)">
+        </div>
+        <div class="snip-status-bar">
+            <span id="snip-cache-info"></span>
+            <button id="snip-update-btn" class="snip-update-btn" onclick="updateSnippets()">Update</button>
+        </div>
+        <div class="snip-tree" id="snip-tree">
+            <p class="snip-loading">Loading…</p>
+        </div>
+    </div>
+
+    <!-- Right: detail panel -->
+    <div class="snip-detail-panel" id="snip-detail">
+        <div class="snip-detail-empty" id="snip-empty-msg">Select a file to view its content</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let _snippetData = null;
+let _selectedPath = null;
+let _generatedAt = null;
+
+// ── Tree rendering ────────────────────────────────────────────────────────────
+
+function buildTree(files) {
+    // Build nested structure: { dirs: {name: subtree}, files: [fileObj] }
+    const root = { dirs: {}, files: [] };
+    for (const f of files) {
+        const parts = f.path.split('/');
+        let node = root;
+        for (let i = 0; i < parts.length - 1; i++) {
+            const seg = parts[i];
+            if (!node.dirs[seg]) node.dirs[seg] = { dirs: {}, files: [] };
+            node = node.dirs[seg];
+        }
+        node.files.push(f);
+    }
+    return root;
+}
+
+function renderTree(node, prefix, filterText) {
+    let html = '';
+    const ft = filterText ? filterText.toLowerCase() : '';
+
+    // Directories first
+    for (const [name, child] of Object.entries(node.dirs).sort((a, b) => a[0].localeCompare(b[0]))) {
+        const dirPath = prefix ? prefix + '/' + name : name;
+        // Count matching files in this subtree for filter
+        const hasMatch = !ft || subtreeHasMatch(child, ft, dirPath);
+        if (!hasMatch) continue;
+        const openClass = ft ? 'open' : '';
+        html += '<div class="snip-dir" onclick="toggleDir(this)" data-dir="' + escHtml(dirPath) + '">';
+        html += '<span class="snip-dir-icon ' + openClass + '">▶</span>';
+        html += escHtml(name) + '/';
+        html += '</div>';
+        html += '<div class="snip-dir-children ' + openClass + '" data-dir-children="' + escHtml(dirPath) + '">';
+        html += renderTree(child, dirPath, filterText);
+        html += '</div>';
+    }
+
+    // Files
+    for (const f of node.files.slice().sort((a, b) => a.name.localeCompare(b.name))) {
+        if (ft && !f.path.toLowerCase().includes(ft)) continue;
+        const sel = f.path === _selectedPath ? ' selected' : '';
+        html += '<div class="snip-file' + sel + '" onclick="selectFile(' + JSON.stringify(f.path) + ')" data-path="' + escHtml(f.path) + '">';
+        html += '<span class="snip-file-name">' + escHtml(f.name) + '</span>';
+        if (f.reviewed) html += '<span class="snip-reviewed-badge">reviewed</span>';
+        html += '</div>';
+    }
+    return html;
+}
+
+function subtreeHasMatch(node, ft, prefix) {
+    for (const f of node.files) {
+        if (f.path.toLowerCase().includes(ft)) return true;
+    }
+    for (const [, child] of Object.entries(node.dirs)) {
+        if (subtreeHasMatch(child, ft, prefix)) return true;
+    }
+    return false;
+}
+
+function renderTreePanel(filterText) {
+    const container = document.getElementById('snip-tree');
+    if (!_snippetData) return;
+    const files = _snippetData.files || [];
+    const tree = buildTree(files);
+    const html = renderTree(tree, '', filterText || '');
+    container.innerHTML = html || '<p class="snip-loading">No files found.</p>';
+}
+
+function filterTree(val) {
+    renderTreePanel(val);
+}
+
+function toggleDir(el) {
+    const icon = el.querySelector('.snip-dir-icon');
+    const dir = el.getAttribute('data-dir');
+    const children = document.querySelector('[data-dir-children="' + dir + '"]');
+    if (!children) return;
+    const isOpen = children.classList.contains('open');
+    children.classList.toggle('open', !isOpen);
+    icon.classList.toggle('open', !isOpen);
+}
+
+// ── File selection & content ──────────────────────────────────────────────────
+
+function selectFile(path) {
+    _selectedPath = path;
+    // Update selected styling
+    document.querySelectorAll('.snip-file').forEach(el => {
+        el.classList.toggle('selected', el.getAttribute('data-path') === path);
+    });
+    showDetail(path);
+}
+
+function showDetail(path) {
+    const detail = document.getElementById('snip-detail');
+    const files = _snippetData ? _snippetData.files || [] : [];
+    const f = files.find(x => x.path === path);
+    if (!f) return;
+
+    const ghUrl = 'https://github.com/eic/snippets/blob/main/' + encodeURIComponent(f.path).replace(/%2F/g, '/');
+    const updatedStr = f.updatedAt ? f.updatedAt.slice(0, 10) : '–';
+    const author = f.commitAuthor || '';
+    const msg = f.commitMessage ? escHtml(f.commitMessage) : '';
+
+    const prepContent = encodeURIComponent('Snippet: ' + f.path + '\n' + ghUrl);
+    const prepHref = '{% url "codoc:prepare" %}'
+        + '?section_id=' + encodeURIComponent(window._SNIPPET_REVIEW_SECTION_ID)
+        + '&definition_id=' + encodeURIComponent(window._SNIPPET_REVIEW_DEFINITION_ID)
+        + '&content=' + prepContent;
+
+    const reviewedBadge = f.reviewed
+        ? '<span class="snip-reviewed-label">✓ reviewed</span>' : '';
+
+    detail.innerHTML =
+        '<div class="snip-detail-header">' +
+            '<div class="snip-detail-path">' + escHtml(f.path) + '</div>' +
+            '<div class="snip-detail-meta">' +
+                'Last modified: ' + updatedStr +
+                (author ? ' by ' + escHtml(author) : '') +
+                (msg ? ' — ' + msg : '') +
+            '</div>' +
+            '<div class="snip-detail-actions">' +
+                '<a class="snip-action-btn" href="' + prepHref + '">Submit snippet review</a>' +
+                '<a class="snip-action-btn snip-gh-btn" href="' + ghUrl + '" target="_blank">View on GitHub</a>' +
+                reviewedBadge +
+            '</div>' +
+        '</div>' +
+        '<div class="snip-detail-body">' +
+            '<div class="snip-content-loading" id="snip-content-status">Loading…</div>' +
+            '<pre class="snip-file-content" id="snip-file-content" style="display:none"></pre>' +
+        '</div>';
+
+    fetchFileContent(path);
+}
+
+function fetchFileContent(path) {
+    const url = '{% url "codoc:snippets_file_api" %}?path=' + encodeURIComponent(path);
+    fetch(url)
+        .then(r => r.json())
+        .then(data => {
+            const status = document.getElementById('snip-content-status');
+            const pre = document.getElementById('snip-file-content');
+            if (!status || !pre) return;
+            if (data.error) {
+                status.textContent = 'Error: ' + data.error;
+                return;
+            }
+            status.style.display = 'none';
+            pre.textContent = data.content;
+            pre.style.display = 'block';
+        })
+        .catch(err => {
+            const status = document.getElementById('snip-content-status');
+            if (status) status.textContent = 'Error: ' + err;
+        });
+}
+
+// ── Cache load / update ───────────────────────────────────────────────────────
+
+function loadSnippets() {
+    fetch('{% url "codoc:snippets_api" %}')
+        .then(r => r.json())
+        .then(data => {
+            if (data.status === 'refreshing') {
+                document.getElementById('snip-tree').innerHTML =
+                    '<p class="snip-loading">First load — building cache. Will auto-refresh in a moment.</p>';
+                document.getElementById('snip-cache-info').textContent = 'Cache building…';
+                setTimeout(loadSnippets, 10000);
+                return;
+            }
+            _snippetData = data;
+            renderTreePanel(document.getElementById('snip-search').value);
+            if (data.generated) {
+                _generatedAt = new Date(data.generated);
+                updateCacheAge();
+            }
+            // Re-show detail if a path was already selected (e.g. after update)
+            if (_selectedPath) showDetail(_selectedPath);
+        })
+        .catch(err => {
+            document.getElementById('snip-tree').innerHTML =
+                '<p class="snip-loading">Error: ' + err + '</p>';
+        });
+}
+
+function updateCacheAge() {
+    if (!_generatedAt) return;
+    var sec = Math.round((Date.now() - _generatedAt.getTime()) / 1000);
+    var ago;
+    if (sec < 60) ago = 'just now';
+    else if (sec < 3600) ago = Math.round(sec / 60) + ' min ago';
+    else ago = Math.round(sec / 3600 * 10) / 10 + ' hr ago';
+    document.getElementById('snip-cache-info').textContent = 'refreshed ' + ago;
+}
+setInterval(updateCacheAge, 30000);
+
+function updateSnippets() {
+    var btn = document.getElementById('snip-update-btn');
+    var info = document.getElementById('snip-cache-info');
+    btn.disabled = true;
+    var oldText = btn.textContent;
+    btn.textContent = 'Updating…';
+    var csrf = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    fetch('{% url "codoc:snippets_refresh_api" %}', {
+        method: 'POST',
+        headers: {'X-CSRFToken': csrf},
+        credentials: 'same-origin',
+    }).then(function(r) {
+        return r.json().then(function(data) { return {status: r.status, data: data}; });
+    }).then(function(res) {
+        if (res.data.ok) {
+            _snippetData = res.data;
+            renderTreePanel(document.getElementById('snip-search').value);
+            if (res.data.generated) {
+                _generatedAt = new Date(res.data.generated);
+                updateCacheAge();
+            }
+            if (_selectedPath) showDetail(_selectedPath);
+        } else {
+            info.textContent = res.data.reason || 'update failed';
+        }
+        btn.textContent = oldText;
+        btn.disabled = false;
+    }).catch(function(err) {
+        info.textContent = 'update error: ' + err;
+        btn.textContent = oldText;
+        btn.disabled = false;
+    });
+}
+
+function escHtml(s) {
+    const d = document.createElement('div');
+    d.textContent = s || '';
+    return d.innerHTML;
+}
+
+loadSnippets();
+</script>
+{% endblock %}

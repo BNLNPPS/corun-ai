@@ -1514,6 +1514,168 @@ def epic_prs_view(request):
     })
 
 
+# ── Snippets ─────────────────────────────────────────────────────────────────
+
+# Repository used by the snippets feature. Also used in the reviewed-path
+# regex so there is a single source of truth.
+_SNIPPETS_REPO = 'eic/snippets'
+# Compiled once; only allow chars that are legal in GitHub repo file paths.
+_SNIPPETS_SAFE_PATH_RE = re.compile(r'^[A-Za-z0-9_./ -]+$')
+# Regex to extract the file path portion from a snippets blob URL in a prompt.
+_SNIPPETS_URL_PATH_RE = re.compile(
+    r'https://github\.com/eic/snippets/blob/[^/\s]+/([^\s"\']+)'
+)
+
+
+def _spawn_snippets_cache_refresh(fn_name: str) -> None:
+    """Spawn a background process to run snippets_cache.<fn_name>()."""
+    import os as _os
+    subprocess.Popen(
+        [sys.executable, '-c',
+         'import django, os; os.environ.setdefault("DJANGO_SETTINGS_MODULE", "corun_project.settings"); '
+         f'django.setup(); from codoc_app.snippets_cache import {fn_name}; {fn_name}()'],
+        cwd=_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+
+
+def snippets_api(request):
+    """Serve cached snippets tree. Same cold-start / stale handling as
+    epic_prs_api: fires a background rebuild if cache is missing or stale,
+    returns what we have (or a refreshing stub) immediately.
+    """
+    from .snippets_cache import load_cache, SCHEMA_VERSION
+
+    data = load_cache()
+
+    if data is None:
+        _spawn_snippets_cache_refresh('refresh_full')
+        return JsonResponse({
+            'files': [], 'generated': None,
+            'status': 'refreshing', 'schema_version': SCHEMA_VERSION,
+        })
+
+    try:
+        gen = datetime.fromisoformat(data['generated'])
+        stale = (datetime.now(timezone.utc) - gen).total_seconds() > 1800  # 30 min
+    except (KeyError, ValueError):
+        stale = True
+
+    if stale:
+        _spawn_snippets_cache_refresh('refresh_delta')
+
+    # Tag files with whether a codoc snippet review has been completed for them.
+    # "Reviewed" = at least one completed codoc-snippet-review Job whose linked
+    # Prompt content references the file's GitHub URL.
+    snippet_review_def = JobDefinition.objects.filter(name='codoc-snippet-review').first()
+    reviewed_paths: set[str] = set()
+    if snippet_review_def:
+        for j in Job.objects.filter(
+            definition=snippet_review_def, status='completed', prompt__isnull=False,
+        ).select_related('prompt'):
+            for m in _SNIPPETS_URL_PATH_RE.finditer(j.prompt.content or ''):
+                reviewed_paths.add(m.group(1))
+
+    for f in data.get('files') or []:
+        f['reviewed'] = f.get('path') in reviewed_paths
+
+    return JsonResponse(data)
+
+
+@require_POST
+@login_required
+def snippets_refresh_api(request):
+    """Forced delta refresh triggered by the Update button on /doc/snippets/."""
+    from .snippets_cache import refresh_delta, RATE_LIMIT_FLOOR
+    from .prs_cache import check_rate_limit
+
+    rl = check_rate_limit()
+    remaining = rl.get('remaining')
+    if remaining is None:
+        logger.error('snippets_refresh_api: rate-limit precheck failed: %s', rl.get('error'))
+        return JsonResponse({
+            'ok': False,
+            'reason': 'rate-limit precheck failed',
+            'rate_limit': {'limit': rl.get('limit'), 'remaining': None, 'reset': rl.get('reset')},
+        }, status=503)
+    if remaining < RATE_LIMIT_FLOOR:
+        return JsonResponse({
+            'ok': False,
+            'reason': (
+                f'insufficient GitHub rate-limit headroom '
+                f'({remaining} < floor {RATE_LIMIT_FLOOR}); resets {rl.get("reset")}'
+            ),
+            'rate_limit': {'limit': rl.get('limit'), 'remaining': remaining, 'reset': rl.get('reset')},
+        }, status=429)
+
+    try:
+        data = refresh_delta()
+    except Exception:
+        logger.error('snippets_refresh_api: refresh failed', exc_info=True)
+        return JsonResponse({'ok': False, 'reason': 'refresh failed'}, status=500)
+
+    data['ok'] = True
+    data['rate_limit'] = {'limit': rl.get('limit'), 'remaining': remaining, 'reset': rl.get('reset')}
+    return JsonResponse(data)
+
+
+def snippets_file_api(request):
+    """Fetch raw content of a single file from eic/snippets via the GitHub
+    contents API. The `path` query parameter is required.
+
+    Returns {'content': '<text>', 'encoding': 'utf-8'} on success, or
+    {'error': '...'} on failure.
+    """
+    import base64
+    path = request.GET.get('path', '').strip()
+    if not path:
+        return JsonResponse({'error': 'path parameter required'}, status=400)
+
+    # Strict allowlist: only characters that are safe in GitHub file paths.
+    # Rejects path traversal (..), absolute paths, shell metacharacters, etc.
+    if not _SNIPPETS_SAFE_PATH_RE.match(path):
+        return JsonResponse({'error': 'invalid path'}, status=400)
+
+    cmd = [
+        'gh', 'api',
+        f'repos/{_SNIPPETS_REPO}/contents/{path}',
+        '-X', 'GET',
+    ]
+    try:
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=15,
+        )
+    except subprocess.TimeoutExpired:
+        return JsonResponse({'error': 'timeout fetching file'}, status=504)
+    if proc.returncode != 0:
+        return JsonResponse({'error': 'failed to fetch file from GitHub'}, status=502)
+
+    try:
+        meta = json.loads(proc.stdout or '{}')
+    except json.JSONDecodeError:
+        logger.error('snippets_file_api: json parse error for path %s', path, exc_info=True)
+        return JsonResponse({'error': 'failed to parse GitHub response'}, status=502)
+
+    raw_b64 = (meta.get('content') or '').replace('\n', '')
+    try:
+        text = base64.b64decode(raw_b64).decode('utf-8', errors='replace')
+    except Exception:
+        logger.error('snippets_file_api: decode error for path %s', path, exc_info=True)
+        return JsonResponse({'error': 'failed to decode file content'}, status=502)
+
+    return JsonResponse({'content': text, 'encoding': 'utf-8'})
+
+
+def snippets_view(request):
+    """Render the snippets browser page."""
+    sec = Section.objects.filter(name='snippet-review', status='active').first()
+    jdef = JobDefinition.objects.filter(name='codoc-snippet-review', status='active').first()
+    return render(request, 'codoc_app/snippets.html', {
+        'snippet_review_section_id': sec.id if sec else '',
+        'snippet_review_definition_id': jdef.id if jdef else '',
+    })
+
+
 # ── Account ──────────────────────────────────────────────────────────────────
 
 @login_required
