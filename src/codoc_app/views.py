@@ -652,6 +652,7 @@ def queue_status_api(request):
             'started': started,
             'started_iso': started_iso,
             'timing': j.data.get('timing'),
+            'tokens': j.data.get('tokens'),
             'error': j.data.get('error', '')[:200] if j.data.get('error') else None,
             'page_group_id': j.data.get('result_page_group_id'),
             'user': (
