@@ -33,7 +33,7 @@ SCHEMA_VERSION = 2
 CACHE_PATH = config(
     'CORUN_PRS_CACHE_PATH',
     default='/var/www/corun-ai/data/epic_prs_cache.json',
-)   
+)
 CLOSED_WINDOW_DAYS = 30
 MAX_WORKERS = 10
 GH_PER_CALL_TIMEOUT = 15  # seconds
