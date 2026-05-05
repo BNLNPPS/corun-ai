@@ -33,7 +33,17 @@
 
 <form id="csrf-form" style="display:none">{% csrf_token %}</form>
 <script>
-function setHTML(c, h) { c.innerHTML = h; c.querySelectorAll('script').forEach(old => { const s = document.createElement('script'); s.textContent = old.textContent; old.replaceWith(s); }); if (window.MathJax?.typesetPromise) MathJax.typesetPromise([c]); }
+function setHTML(c, h) {
+    c.innerHTML = h;
+    c.querySelectorAll('script').forEach(old => {
+        const s = document.createElement('script');
+        s.textContent = old.textContent;
+        old.replaceWith(s);
+    });
+    if (window.MathJax?.typesetPromise) {
+        MathJax.typesetPromise([c]);
+    }
+}
 
 function loadPromptView(gid) {
     fetch('{% url "codoc:prompt_view_frag" "00000000-0000-0000-0000-000000000000" %}'.replace('00000000-0000-0000-0000-000000000000', gid))
