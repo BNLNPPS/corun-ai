@@ -29,6 +29,7 @@ import django
 django.setup()
 
 import markdown as md_lib
+from decouple import config
 from django.conf import settings as dj_settings
 from django.utils import timezone
 
@@ -39,9 +40,17 @@ from corun_app.models import (
 
 logger = logging.getLogger('corun.worker')
 
-CLAUDE_PATHS = ['/home/admin/.local/bin/claude', '/usr/local/bin/claude']
-GEMINI_PATHS = ['/home/admin/.nvm/versions/node/v24.13.1/bin/gemini',
-                '/usr/local/bin/gemini']
+_claude_path_env = config('CORUN_CLAUDE_PATH', default='')
+_gemini_path_env = config('CORUN_GEMINI_PATH', default='')
+
+CLAUDE_PATHS = (
+    [_claude_path_env] if _claude_path_env
+    else ['/home/admin/.local/bin/claude', '/usr/local/bin/claude']
+)
+GEMINI_PATHS = (
+    [_gemini_path_env] if _gemini_path_env
+    else ['/home/admin/.nvm/versions/node/v24.13.1/bin/gemini', '/usr/local/bin/gemini']
+)
 DEFAULT_TIMEOUT = 3600  # 1 hour
 
 
@@ -385,8 +394,11 @@ class Worker:
                 ]
 
         env = {
-            'HOME': '/home/admin',
-            'PATH': '/home/admin/.nvm/versions/node/v24.13.1/bin:/home/admin/.local/bin:/usr/local/bin:/usr/bin:/bin',
+            'HOME': config('CORUN_WORKER_HOME', default=os.path.expanduser('~')),
+            'PATH': config(
+                'CORUN_WORKER_PATH',
+                default='/home/admin/.nvm/versions/node/v24.13.1/bin:/home/admin/.local/bin:/usr/local/bin:/usr/bin:/bin',
+            ),
             'PYTHONIOENCODING': 'utf-8',
             'LANG': 'C.UTF-8',
             'LC_ALL': 'C.UTF-8',
