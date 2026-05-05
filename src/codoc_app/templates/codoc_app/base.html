@@ -206,6 +206,13 @@
 
         {% block extra_css %}{% endblock %}
     </style>
+    <script>
+        MathJax = {
+            tex: { inlineMath: [['$', '$'], ['\\(', '\\)']] },
+            options: { skipHtmlTags: ['script','noscript','style','textarea','pre'] },
+        };
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.min.js" async></script>
 </head>
 <body class="{% if user_theme == 'light' %}light{% endif %}">
     <div class="topbar">
