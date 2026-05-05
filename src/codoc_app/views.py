@@ -1530,6 +1530,7 @@ _SNIPPETS_URL_PATH_RE = re.compile(
 
 def _spawn_snippets_cache_refresh(fn_name: str) -> None:
     """Spawn a background process to run snippets_cache.<fn_name>()."""
+    import os
     subprocess.Popen(
         [sys.executable, '-c',
          'import django, os; os.environ.setdefault("DJANGO_SETTINGS_MODULE", "corun_project.settings"); '
