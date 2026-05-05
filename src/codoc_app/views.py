@@ -1519,9 +1519,12 @@ def epic_prs_view(request):
 # Repository used by the snippets feature. Also used in the reviewed-path
 # regex so there is a single source of truth.
 _SNIPPETS_REPO = 'eic/snippets'
+# Max chars of subprocess stderr/stdout to include in log messages.
+_SNIPPETS_MAX_LOG_LEN = 300
 # Regex to extract the file path portion from a snippets blob URL in a prompt.
+# Built from _SNIPPETS_REPO to keep them in sync.
 _SNIPPETS_URL_PATH_RE = re.compile(
-    r'https://github\.com/eic/snippets/blob/[^/\s]+/([^\s"\']+)'
+    r'https://github\.com/' + re.escape(_SNIPPETS_REPO) + r'/blob/[^/\s]+/([^\s"\']+)'
 )
 
 
@@ -1610,6 +1613,7 @@ def snippets_refresh_api(request):
     return JsonResponse({'ok': True})
 
 
+@login_required
 def snippets_file_api(request):
     """Fetch raw content of a single file from eic/snippets via the GitHub
     contents API. The `path` query parameter is required.
@@ -1644,6 +1648,10 @@ def snippets_file_api(request):
     except subprocess.TimeoutExpired:
         return JsonResponse({'error': 'timeout fetching file'}, status=504)
     if proc.returncode != 0:
+        logger.error(
+            'snippets_file_api: gh api failed for path %s: %s',
+            safe_path, (proc.stderr or proc.stdout or '').strip()[:_SNIPPETS_MAX_LOG_LEN],
+        )
         return JsonResponse({'error': 'failed to fetch file from GitHub'}, status=502)
 
     try:
@@ -1652,7 +1660,17 @@ def snippets_file_api(request):
         logger.error('snippets_file_api: json parse error for path %s', safe_path, exc_info=True)
         return JsonResponse({'error': 'failed to parse GitHub response'}, status=502)
 
-    raw_b64 = (meta.get('content') or '').replace('\n', '')
+    # The Contents API omits 'content' for directories, symlinks, and files
+    # larger than 1 MB (where only 'download_url' is provided). Guard against
+    # those cases before attempting base64-decode.
+    if meta.get('type') != 'file' or not meta.get('content'):
+        logger.warning(
+            'snippets_file_api: content unavailable for path %s (type=%s)',
+            safe_path, meta.get('type'),
+        )
+        return JsonResponse({'error': 'file content not available'}, status=502)
+
+    raw_b64 = meta['content'].replace('\n', '')
     try:
         text = base64.b64decode(raw_b64).decode('utf-8', errors='replace')
     except Exception:

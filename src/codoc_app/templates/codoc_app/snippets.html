@@ -109,11 +109,11 @@ function renderTree(node, prefix, filterText) {
         const hasMatch = !ft || subtreeHasMatch(child, ft, dirPath);
         if (!hasMatch) continue;
         const openClass = ft ? 'open' : '';
-        html += '<div class="snip-dir" onclick="toggleDir(this)" data-dir="' + escHtml(dirPath) + '">';
+        html += '<div class="snip-dir" data-dir="' + escAttr(dirPath) + '">';
         html += '<span class="snip-dir-icon ' + openClass + '">▶</span>';
         html += escHtml(name) + '/';
         html += '</div>';
-        html += '<div class="snip-dir-children ' + openClass + '" data-dir-children="' + escHtml(dirPath) + '">';
+        html += '<div class="snip-dir-children ' + openClass + '" data-dir-children="' + escAttr(dirPath) + '">';
         html += renderTree(child, dirPath, filterText);
         html += '</div>';
     }
@@ -122,7 +122,7 @@ function renderTree(node, prefix, filterText) {
     for (const f of node.files.slice().sort((a, b) => a.name.localeCompare(b.name))) {
         if (ft && !f.path.toLowerCase().includes(ft)) continue;
         const sel = f.path === _selectedPath ? ' selected' : '';
-        html += '<div class="snip-file' + sel + '" onclick="selectFile(' + JSON.stringify(f.path) + ')" data-path="' + escHtml(f.path) + '">';
+        html += '<div class="snip-file' + sel + '" data-path="' + escAttr(f.path) + '">';
         html += '<span class="snip-file-name">' + escHtml(f.name) + '</span>';
         if (f.reviewed) html += '<span class="snip-reviewed-badge">reviewed</span>';
         html += '</div>';
@@ -311,6 +311,26 @@ function escHtml(s) {
     d.textContent = s || '';
     return d.innerHTML;
 }
+
+// Escapes a string for use as an HTML attribute value (double-quoted).
+// Adds &quot; on top of what escHtml already provides.
+function escAttr(s) {
+    return escHtml(s).replace(/"/g, '&quot;');
+}
+
+// ── Event delegation for tree interactions ────────────────────────────────────
+// Attached once; survives innerHTML rebuilds of the container children.
+document.getElementById('snip-tree').addEventListener('click', function(e) {
+    const fileEl = e.target.closest('.snip-file');
+    if (fileEl) {
+        selectFile(fileEl.dataset.path);
+        return;
+    }
+    const dirEl = e.target.closest('.snip-dir');
+    if (dirEl) {
+        toggleDir(dirEl);
+    }
+});
 
 loadSnippets();
 </script>
