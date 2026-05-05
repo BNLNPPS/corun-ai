@@ -6,6 +6,13 @@
 <nav><a href="{% url 'codoc:home' %}">Browse</a></nav>
 {% endblock %}
 
+{% block extra_css %}
+th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+th.sortable:hover { color: var(--accent); }
+th.sort-asc::after  { content: ' ▲'; font-size: 10px; }
+th.sort-desc::after { content: ' ▼'; font-size: 10px; }
+{% endblock %}
+
 {% block body %}
 <h1>Job Queue</h1>
 
@@ -29,22 +36,71 @@ function formatBytes(b) {
     return (b/1048576).toFixed(1) + ' MB';
 }
 
+function formatTokens(t) {
+    if (!t) return '—';
+    const total = (t.input || 0) + (t.output || 0);
+    if (!total) return '—';
+    const fmt = n => n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
+    let s = fmt(t.input || 0) + ' / ' + fmt(t.output || 0);
+    if (t.cost_usd != null) s += '<br><span style="font-size:11px;color:var(--grey)">$' + t.cost_usd.toFixed(4) + '</span>';
+    return s;
+}
+
 function truncate(s, n) { return s.length > n ? s.slice(0, n) + '…' : s; }
 
+// ── Sort state ─────────────────────────────────────────────────────────────────
+// Each table tracks its own sort key and direction independently.
+const sortState = {
+    active:    { key: 'created_iso', dir: 'desc' },
+    completed: { key: 'created_iso', dir: 'desc' },
+};
+
+function sortRows(rows, key, dir) {
+    return rows.slice().sort((a, b) => {
+        let av = a[key], bv = b[key];
+        // Numeric sort for timing and token totals
+        if (key === 'timing') {
+            av = av || 0; bv = bv || 0;
+        } else if (key === 'tokens_total') {
+            av = a.tokens ? (a.tokens.input || 0) + (a.tokens.output || 0) : 0;
+            bv = b.tokens ? (b.tokens.input || 0) + (b.tokens.output || 0) : 0;
+        } else {
+            av = av || ''; bv = bv || '';
+        }
+        if (av < bv) return dir === 'asc' ? -1 : 1;
+        if (av > bv) return dir === 'asc' ? 1 : -1;
+        return 0;
+    });
+}
+
+function sortHeader(tableId, key) {
+    const st = sortState[tableId];
+    if (st.key === key) {
+        st.dir = st.dir === 'asc' ? 'desc' : 'asc';
+    } else {
+        st.key = key;
+        st.dir = key === 'created_iso' ? 'desc' : 'asc';
+    }
+    renderQueue(_lastData);
+}
+
+function thSort(tableId, key, label) {
+    const st = sortState[tableId];
+    const cls = 'sortable' + (st.key === key ? ' sort-' + st.dir : '');
+    return '<th class="' + cls + '" onclick="sortHeader(\'' + tableId + '\',\'' + key + '\')">' + label + '</th>';
+}
+
 let prevRead = null, prevWrite = null;
+let _lastData = { jobs: [], claude_processes: [] };
 
 function renderQueue(data) {
+    _lastData = data;
     const running = data.jobs.filter(j => j.status === 'running');
     const queued  = data.jobs.filter(j => j.status === 'queued');
     const completed = data.jobs.filter(j => j.status !== 'queued' && j.status !== 'running');
 
-    // Render one row per active/queued job. For running jobs, "Started"
-    // is when the worker picked it up (started_iso, derived from
-    // modified_at server-side) and "Elapsed" is now - started_iso.
-    // For queued jobs, neither has happened yet — show '—' instead of
-    // counting time since the row was inserted (which would lie about
-    // what the worker is doing).
-    function renderRow(j) {
+    // ── Active section ─────────────────────────────────────────────────────────
+    function renderActiveRow(j) {
         let startedDisplay = '—';
         let elapsed = '—';
         if (j.status === 'running') {
@@ -58,18 +114,26 @@ function renderQueue(data) {
             }
         }
         let promptCell = truncate(j.prompt || '—', 60);
-        if (j.commented) {
-            promptCell += '<div style="color:var(--accent);font-size:11px;margin-top:2px">Commented</div>';
-        }
+        if (j.commented) promptCell += '<div style="color:var(--accent);font-size:11px;margin-top:2px">Commented</div>';
         return '<tr><td>' + promptCell + '</td><td>' + j.definition +
-            '</td><td>' + (j.user || '') + '</td><td><span class="status status-' + j.status + '">' + j.status +
-            '</span></td><td>' + startedDisplay + '</td><td>' + elapsed +
-            '</td><td><button class="btn" style="background:#7f1d1d;font-size:11px;padding:2px 8px" onclick="abortJob(\'' + j.id + '\')">Abort</button></td></tr>';
+            '</td><td>' + (j.user || '') + '</td>' +
+            '<td><span class="status status-' + j.status + '">' + j.status + '</span></td>' +
+            '<td>' + startedDisplay + '</td>' +
+            '<td>' + elapsed + '</td>' +
+            '<td><button class="btn" style="background:#7f1d1d;font-size:11px;padding:2px 8px" onclick="abortJob(\'' + j.id + '\')">Abort</button></td></tr>';
     }
 
-    function renderTable(rows) {
-        let h = '<table class="queue"><thead><tr><th>Prompt</th><th>Definition</th><th>User</th><th>Status</th><th>Started</th><th>Elapsed</th><th></th></tr></thead><tbody>';
-        rows.forEach(j => { h += renderRow(j); });
+    function renderActiveTable(rows, tableId) {
+        const st = sortState[tableId];
+        const sorted = sortRows(rows, st.key, st.dir);
+        let h = '<table class="queue"><thead><tr>' +
+            thSort(tableId, 'prompt', 'Prompt') +
+            thSort(tableId, 'definition', 'Definition') +
+            thSort(tableId, 'user', 'User') +
+            thSort(tableId, 'status', 'Status') +
+            thSort(tableId, 'started_iso', 'Started') +
+            '<th>Elapsed</th><th></th></tr></thead><tbody>';
+        sorted.forEach(j => { h += renderActiveRow(j); });
         h += '</tbody></table>';
         return h;
     }
@@ -77,44 +141,59 @@ function renderQueue(data) {
     let ahtml = '';
     if (running.length > 0) {
         ahtml += '<h2>Active <span style="font-size:12px;color:var(--grey)">(' + running.length + ' running, live)</span></h2>';
-        ahtml += renderTable(running);
+        ahtml += renderActiveTable(running, 'active');
     }
     if (queued.length > 0) {
         ahtml += '<h2>Queued <span style="font-size:12px;color:var(--grey)">(' + queued.length + ' waiting)</span></h2>';
-        ahtml += renderTable(queued);
+        ahtml += renderActiveTable(queued, 'active');
     }
     if (running.length === 0 && queued.length === 0) {
         ahtml = '<p class="empty">No active or queued jobs.</p>';
     }
     document.getElementById('active-section').innerHTML = ahtml;
 
-    // Completed section
+    // ── Completed section ──────────────────────────────────────────────────────
     let chtml = '<h2>Completed</h2>';
     if (completed.length > 0) {
-        chtml += '<table class="queue"><thead><tr><th>Prompt</th><th>Definition</th><th>User</th><th>Status</th><th style="white-space:nowrap">Time</th><th>Result</th><th></th></tr></thead><tbody>';
-        completed.forEach(j => {
+        const st = sortState.completed;
+        const sorted = sortRows(completed, st.key, st.dir);
+        chtml += '<table class="queue"><thead><tr>' +
+            thSort('completed', 'prompt', 'Prompt') +
+            thSort('completed', 'definition', 'Definition') +
+            thSort('completed', 'user', 'User') +
+            thSort('completed', 'status', 'Status') +
+            thSort('completed', 'created_iso', 'Time') +
+            thSort('completed', 'timing', 'Duration') +
+            thSort('completed', 'tokens_total', 'Tokens (in/out)') +
+            '<th>Result</th><th></th></tr></thead><tbody>';
+        sorted.forEach(j => {
             let result = '';
             if (j.page_group_id) {
                 const url = PAGE_URL.replace('00000000-0000-0000-0000-000000000000', j.page_group_id);
                 result = '<a href="' + url + '">View page</a>';
             }
-            if (j.error) {
-                result += '<span style="color:#c44;font-size:12px">' + truncate(j.error, 40) + '</span>';
-            }
-            let timing = '';
-            if (j.timing) {
+            if (j.error) result += '<span style="color:#c44;font-size:12px">' + truncate(j.error, 40) + '</span>';
+            if (j.commented) result += '<div style="color:var(--accent);font-size:11px;margin-top:2px">Commented</div>';
+
+            let timing = '—';
+            if (j.timing != null) {
                 const ts = Math.round(j.timing);
-                timing = ts < 60 ? '<br>' + ts + 's' : '<br>' + Math.floor(ts/60) + 'm ' + (ts%60) + 's';
+                timing = ts < 60 ? ts + 's' : Math.floor(ts/60) + 'm ' + (ts%60) + 's';
             }
-            if (j.commented) {
-                result += '<div style="color:var(--accent);font-size:11px;margin-top:2px">Commented</div>';
-            }
-            chtml += '<tr><td>' + truncate(j.prompt || '—', 60) + '</td><td>' + j.definition +
-                '</td><td>' + (j.user || '') + '</td><td><span class="status status-' + j.status + '">' + j.status +
-                '</span></td><td>' + j.created + timing + '</td><td>' + result +
-                '</td><td>' +
-                '<a class="btn" style="background:#14532d;font-size:11px;padding:2px 8px;margin-right:16px;text-decoration:none;display:inline-block" href="' + PREPARE_URL + '?source_job=' + j.id + '" title="Open the setup panel pre-filled from this job — change sysprompt or model before rerunning">Rerun</a>' +
-                '<span style="color:#c44;cursor:pointer;font-size:16px" onclick="deleteJob(\'' + j.id + '\')" title="Delete">✕</span></td></tr>';
+
+            chtml += '<tr>' +
+                '<td>' + truncate(j.prompt || '—', 60) + '</td>' +
+                '<td>' + j.definition + '</td>' +
+                '<td>' + (j.user || '') + '</td>' +
+                '<td><span class="status status-' + j.status + '">' + j.status + '</span></td>' +
+                '<td style="white-space:nowrap">' + j.created + '</td>' +
+                '<td style="white-space:nowrap">' + timing + '</td>' +
+                '<td style="white-space:nowrap">' + formatTokens(j.tokens) + '</td>' +
+                '<td>' + result + '</td>' +
+                '<td>' +
+                    '<a class="btn" style="background:#14532d;font-size:11px;padding:2px 8px;margin-right:16px;text-decoration:none;display:inline-block" href="' + PREPARE_URL + '?source_job=' + j.id + '" title="Open the setup panel pre-filled from this job">Rerun</a>' +
+                    '<span style="color:#c44;cursor:pointer;font-size:16px" onclick="deleteJob(\'' + j.id + '\')" title="Delete">✕</span>' +
+                '</td></tr>';
         });
         chtml += '</tbody></table>';
     } else {
@@ -122,7 +201,7 @@ function renderQueue(data) {
     }
     document.getElementById('completed-section').innerHTML = chtml;
 
-    // Process monitor
+    // ── Process monitor ────────────────────────────────────────────────────────
     const mon = document.getElementById('process-monitor');
     const det = document.getElementById('process-details');
     if (data.claude_processes && data.claude_processes.length > 0) {
@@ -174,3 +253,4 @@ setInterval(pollQueue, 5000);
 pollQueue();
 </script>
 {% endblock %}
+
