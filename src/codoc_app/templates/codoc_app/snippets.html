@@ -12,15 +12,15 @@
 .snip-update-btn:hover { border-color: var(--accent); }
 .snip-update-btn:disabled { color: var(--grey); cursor: not-allowed; }
 .snip-tree { flex: 1; overflow-y: auto; padding: 6px 0; }
-.snip-dir { padding: 4px 10px; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 5px; color: var(--accent); font-weight: 600; user-select: none; }
+.snip-dir { padding: 4px 10px 4px var(--snip-pl, 10px); font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 5px; color: var(--accent); font-weight: 600; user-select: none; }
 .snip-dir:hover { background: var(--code-bg); }
 .snip-dir-icon { font-size: 10px; display: inline-block; width: 12px; transition: transform 0.15s; flex-shrink: 0; }
 .snip-dir-icon.open { transform: rotate(90deg); }
 .snip-dir-children { display: none; }
 .snip-dir-children.open { display: block; }
-.snip-file { padding: 3px 10px 3px 28px; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 5px; color: var(--text); }
+.snip-file { padding: 3px 10px 3px var(--snip-pl, 28px); font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 5px; color: var(--text); }
 .snip-file:hover { background: var(--code-bg); }
-.snip-file.selected { background: var(--selected); border-left: 3px solid var(--selected-border); padding-left: 25px; }
+.snip-file.selected { background: var(--selected); border-left: 3px solid var(--selected-border); padding-left: calc(var(--snip-pl, 28px) - 3px); }
 .snip-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .snip-reviewed-badge { font-size: 10px; background: #14532d; color: #bbf7d0; padding: 1px 5px; border-radius: 3px; flex-shrink: 0; }
 .light .snip-reviewed-badge { background: #dcfce7; color: #166534; }
@@ -98,9 +98,12 @@ function buildTree(files) {
     return root;
 }
 
-function renderTree(node, prefix, filterText) {
+function renderTree(node, prefix, filterText, depth) {
+    if (depth === undefined) depth = 0;
     let html = '';
     const ft = filterText ? filterText.toLowerCase() : '';
+    const dirPl = 10 + depth * 14;
+    const filePl = 28 + depth * 14;
 
     // Directories first
     for (const [name, child] of Object.entries(node.dirs).sort((a, b) => a[0].localeCompare(b[0]))) {
@@ -109,12 +112,12 @@ function renderTree(node, prefix, filterText) {
         const hasMatch = !ft || subtreeHasMatch(child, ft, dirPath);
         if (!hasMatch) continue;
         const openClass = ft ? 'open' : '';
-        html += '<div class="snip-dir" data-dir="' + escAttr(dirPath) + '">';
+        html += '<div class="snip-dir" style="--snip-pl:' + dirPl + 'px" data-dir="' + escAttr(dirPath) + '">';
         html += '<span class="snip-dir-icon ' + openClass + '">▶</span>';
         html += escHtml(name) + '/';
         html += '</div>';
         html += '<div class="snip-dir-children ' + openClass + '" data-dir-children="' + escAttr(dirPath) + '">';
-        html += renderTree(child, dirPath, filterText);
+        html += renderTree(child, dirPath, filterText, depth + 1);
         html += '</div>';
     }
 
@@ -122,7 +125,7 @@ function renderTree(node, prefix, filterText) {
     for (const f of node.files.slice().sort((a, b) => a.name.localeCompare(b.name))) {
         if (ft && !f.path.toLowerCase().includes(ft)) continue;
         const sel = f.path === _selectedPath ? ' selected' : '';
-        html += '<div class="snip-file' + sel + '" data-path="' + escAttr(f.path) + '">';
+        html += '<div class="snip-file' + sel + '" style="--snip-pl:' + filePl + 'px" data-path="' + escAttr(f.path) + '">';
         html += '<span class="snip-file-name">' + escHtml(f.name) + '</span>';
         if (f.reviewed) html += '<span class="snip-reviewed-badge">reviewed</span>';
         html += '</div>';
@@ -174,6 +177,18 @@ function selectFile(path) {
     showDetail(path);
 }
 
+function buildReviewHref(path, ghUrl, content) {
+    const tpl = window._SNIPPET_REVIEW_PROMPT_TEMPLATE || '';
+    const promptContent = tpl
+        .replace('{path}', path)
+        .replace('{gh_url}', ghUrl)
+        .replace('{content}', content || '');
+    return '{% url "codoc:prepare" %}'
+        + '?section_id=' + encodeURIComponent(window._SNIPPET_REVIEW_SECTION_ID)
+        + '&definition_id=' + encodeURIComponent(window._SNIPPET_REVIEW_DEFINITION_ID)
+        + '&content=' + encodeURIComponent(promptContent);
+}
+
 function showDetail(path) {
     const detail = document.getElementById('snip-detail');
     const files = _snippetData ? _snippetData.files || [] : [];
@@ -184,12 +199,6 @@ function showDetail(path) {
     const updatedStr = f.updatedAt ? f.updatedAt.slice(0, 10) : '–';
     const author = f.commitAuthor || '';
     const msg = f.commitMessage ? escHtml(f.commitMessage) : '';
-
-    const prepContent = encodeURIComponent('Snippet: ' + f.path + '\n' + ghUrl);
-    const prepHref = '{% url "codoc:prepare" %}'
-        + '?section_id=' + encodeURIComponent(window._SNIPPET_REVIEW_SECTION_ID)
-        + '&definition_id=' + encodeURIComponent(window._SNIPPET_REVIEW_DEFINITION_ID)
-        + '&content=' + prepContent;
 
     const reviewedBadge = f.reviewed
         ? '<span class="snip-reviewed-label">✓ reviewed</span>' : '';
@@ -203,7 +212,7 @@ function showDetail(path) {
                 (msg ? ' — ' + msg : '') +
             '</div>' +
             '<div class="snip-detail-actions">' +
-                '<a class="snip-action-btn" href="' + prepHref + '">Submit snippet review</a>' +
+                '<a class="snip-action-btn" id="snip-review-link" href="' + buildReviewHref(f.path, ghUrl, '') + '">Submit snippet review</a>' +
                 '<a class="snip-action-btn snip-gh-btn" href="' + ghUrl + '" target="_blank">View on GitHub</a>' +
                 reviewedBadge +
             '</div>' +
@@ -213,10 +222,10 @@ function showDetail(path) {
             '<pre class="snip-file-content" id="snip-file-content" style="display:none"></pre>' +
         '</div>';
 
-    fetchFileContent(path);
+    fetchFileContent(path, ghUrl);
 }
 
-function fetchFileContent(path) {
+function fetchFileContent(path, ghUrl) {
     const url = '{% url "codoc:snippets_file_api" %}?path=' + encodeURIComponent(path);
     fetch(url)
         .then(r => r.json())
@@ -231,6 +240,11 @@ function fetchFileContent(path) {
             status.style.display = 'none';
             pre.textContent = data.content;
             pre.style.display = 'block';
+            // Update the review link with the full file content in the prompt.
+            const link = document.getElementById('snip-review-link');
+            if (link && ghUrl) {
+                link.href = buildReviewHref(path, ghUrl, data.content);
+            }
         })
         .catch(err => {
             const status = document.getElementById('snip-content-status');
