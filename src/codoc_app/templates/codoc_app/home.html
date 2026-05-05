@@ -103,6 +103,7 @@ function setHTML(container, html) {
         s.textContent = old.textContent;
         old.replaceWith(s);
     });
+    if (window.MathJax?.typesetPromise) MathJax.typesetPromise([container]);
 }
 
 function selectItem(idx, skipHistory) {
