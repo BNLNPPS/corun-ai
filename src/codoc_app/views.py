@@ -1519,8 +1519,6 @@ def epic_prs_view(request):
 # Repository used by the snippets feature. Also used in the reviewed-path
 # regex so there is a single source of truth.
 _SNIPPETS_REPO = 'eic/snippets'
-# Compiled once; only allow chars that are legal in GitHub repo file paths.
-_SNIPPETS_SAFE_PATH_RE = re.compile(r'^[A-Za-z0-9_./ -]+$')
 # Regex to extract the file path portion from a snippets blob URL in a prompt.
 _SNIPPETS_URL_PATH_RE = re.compile(
     r'https://github\.com/eic/snippets/blob/[^/\s]+/([^\s"\']+)'
@@ -1529,12 +1527,11 @@ _SNIPPETS_URL_PATH_RE = re.compile(
 
 def _spawn_snippets_cache_refresh(fn_name: str) -> None:
     """Spawn a background process to run snippets_cache.<fn_name>()."""
-    import os as _os
     subprocess.Popen(
         [sys.executable, '-c',
          'import django, os; os.environ.setdefault("DJANGO_SETTINGS_MODULE", "corun_project.settings"); '
          f'django.setup(); from codoc_app.snippets_cache import {fn_name}; {fn_name}()'],
-        cwd=_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+        cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
 
@@ -1596,16 +1593,14 @@ def snippets_refresh_api(request):
         return JsonResponse({
             'ok': False,
             'reason': 'rate-limit precheck failed',
-            'rate_limit': {'limit': rl.get('limit'), 'remaining': None, 'reset': rl.get('reset')},
         }, status=503)
     if remaining < RATE_LIMIT_FLOOR:
         return JsonResponse({
             'ok': False,
             'reason': (
                 f'insufficient GitHub rate-limit headroom '
-                f'({remaining} < floor {RATE_LIMIT_FLOOR}); resets {rl.get("reset")}'
+                f'({remaining} < floor {RATE_LIMIT_FLOOR})'
             ),
-            'rate_limit': {'limit': rl.get('limit'), 'remaining': remaining, 'reset': rl.get('reset')},
         }, status=429)
 
     try:
@@ -1614,8 +1609,9 @@ def snippets_refresh_api(request):
         logger.error('snippets_refresh_api: refresh failed', exc_info=True)
         return JsonResponse({'ok': False, 'reason': 'refresh failed'}, status=500)
 
+    # Strip internal error details before returning to the client.
+    data.pop('errors', None)
     data['ok'] = True
-    data['rate_limit'] = {'limit': rl.get('limit'), 'remaining': remaining, 'reset': rl.get('reset')}
     return JsonResponse(data)
 
 
@@ -1627,18 +1623,23 @@ def snippets_file_api(request):
     {'error': '...'} on failure.
     """
     import base64
+    from .snippets_cache import load_cache as _load_snippets_cache
+
     path = request.GET.get('path', '').strip()
     if not path:
         return JsonResponse({'error': 'path parameter required'}, status=400)
 
-    # Strict allowlist: only characters that are safe in GitHub file paths.
-    # Rejects path traversal (..), absolute paths, shell metacharacters, etc.
-    if not _SNIPPETS_SAFE_PATH_RE.match(path):
-        return JsonResponse({'error': 'invalid path'}, status=400)
+    # Validate against the trusted cache: only serve files we fetched from GitHub.
+    # This also breaks the taint chain — safe_path comes from our cache, not the request.
+    cache = _load_snippets_cache()
+    known_files = {f['path']: f for f in (cache.get('files') or [])} if cache else {}
+    if path not in known_files:
+        return JsonResponse({'error': 'file not found'}, status=404)
+    safe_path = known_files[path]['path']  # sourced from cache, not user input
 
     cmd = [
         'gh', 'api',
-        f'repos/{_SNIPPETS_REPO}/contents/{path}',
+        f'repos/{_SNIPPETS_REPO}/contents/{safe_path}',
         '-X', 'GET',
     ]
     try:
@@ -1653,14 +1654,14 @@ def snippets_file_api(request):
     try:
         meta = json.loads(proc.stdout or '{}')
     except json.JSONDecodeError:
-        logger.error('snippets_file_api: json parse error for path %s', path, exc_info=True)
+        logger.error('snippets_file_api: json parse error for path %s', safe_path, exc_info=True)
         return JsonResponse({'error': 'failed to parse GitHub response'}, status=502)
 
     raw_b64 = (meta.get('content') or '').replace('\n', '')
     try:
         text = base64.b64decode(raw_b64).decode('utf-8', errors='replace')
     except Exception:
-        logger.error('snippets_file_api: decode error for path %s', path, exc_info=True)
+        logger.error('snippets_file_api: decode error for path %s', safe_path, exc_info=True)
         return JsonResponse({'error': 'failed to decode file content'}, status=502)
 
     return JsonResponse({'content': text, 'encoding': 'utf-8'})

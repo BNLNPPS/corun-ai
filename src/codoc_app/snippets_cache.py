@@ -23,7 +23,6 @@ import logging
 import os
 import subprocess
 import tempfile
-import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
@@ -133,7 +132,7 @@ def _atomic_write(data: dict) -> None:
             json.dump(data, f)
         os.replace(tmp, CACHE_PATH)
     except Exception:
-        logger.error('snippets_cache: failed to write cache atomically\n%s', traceback.format_exc())
+        logger.error('snippets_cache: failed to write cache atomically', exc_info=True)
         try:
             os.unlink(tmp)
         except OSError:
