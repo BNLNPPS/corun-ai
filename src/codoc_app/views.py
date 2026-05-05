@@ -1601,19 +1601,13 @@ def snippets_refresh_api(request):
         }, status=429)
 
     try:
-        data = refresh_delta()
+        refresh_delta()
     except Exception:
         logger.error('snippets_refresh_api: refresh failed', exc_info=True)
         return JsonResponse({'ok': False, 'reason': 'refresh failed'}, status=500)
 
-    # Return only non-sensitive summary fields. The caller's JS reloads
-    # the full file list from snippets_api after a successful refresh.
-    return JsonResponse({
-        'ok': True,
-        'generated': data.get('generated'),
-        'refresh_kind': data.get('refresh_kind'),
-        'changed_count': data.get('changed_count', 0),
-    })
+    # The caller's JS reloads the full file list from snippets_api after success.
+    return JsonResponse({'ok': True})
 
 
 def snippets_file_api(request):
