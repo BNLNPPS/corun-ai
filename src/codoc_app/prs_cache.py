@@ -29,6 +29,8 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone, timedelta
 
+from decouple import config
+
 SCHEMA_VERSION = 2
 CACHE_PATH = config(
     'CORUN_PRS_CACHE_PATH',
