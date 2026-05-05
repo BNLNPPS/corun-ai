@@ -26,10 +26,15 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
+from decouple import config
+
 logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 1
-CACHE_PATH = '/var/www/corun-ai/data/snippets_cache.json'
+CACHE_PATH = config(
+    'CORUN_SNIPPETS_CACHE_PATH',
+    default='/var/www/corun-ai/data/snippets_cache.json',
+)
 SNIPPETS_REPO = 'eic/snippets'
 MAX_WORKERS = 20
 GH_PER_CALL_TIMEOUT = 15  # seconds
