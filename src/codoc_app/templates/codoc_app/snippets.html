@@ -291,19 +291,14 @@ function updateSnippets() {
     }).then(function(r) {
         return r.json().then(function(data) { return {status: r.status, data: data}; });
     }).then(function(res) {
+        btn.textContent = oldText;
+        btn.disabled = false;
         if (res.data.ok) {
-            _snippetData = res.data;
-            renderTreePanel(document.getElementById('snip-search').value);
-            if (res.data.generated) {
-                _generatedAt = new Date(res.data.generated);
-                updateCacheAge();
-            }
-            if (_selectedPath) showDetail(_selectedPath);
+            // Reload the full file list from the cache API.
+            loadSnippets();
         } else {
             info.textContent = res.data.reason || 'update failed';
         }
-        btn.textContent = oldText;
-        btn.disabled = false;
     }).catch(function(err) {
         info.textContent = 'update error: ' + err;
         btn.textContent = oldText;

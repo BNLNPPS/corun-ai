@@ -1597,10 +1597,7 @@ def snippets_refresh_api(request):
     if remaining < RATE_LIMIT_FLOOR:
         return JsonResponse({
             'ok': False,
-            'reason': (
-                f'insufficient GitHub rate-limit headroom '
-                f'({remaining} < floor {RATE_LIMIT_FLOOR})'
-            ),
+            'reason': 'insufficient GitHub rate-limit headroom; try again later',
         }, status=429)
 
     try:
@@ -1609,10 +1606,14 @@ def snippets_refresh_api(request):
         logger.error('snippets_refresh_api: refresh failed', exc_info=True)
         return JsonResponse({'ok': False, 'reason': 'refresh failed'}, status=500)
 
-    # Strip internal error details before returning to the client.
-    data.pop('errors', None)
-    data['ok'] = True
-    return JsonResponse(data)
+    # Return only non-sensitive summary fields. The caller's JS reloads
+    # the full file list from snippets_api after a successful refresh.
+    return JsonResponse({
+        'ok': True,
+        'generated': data.get('generated'),
+        'refresh_kind': data.get('refresh_kind'),
+        'changed_count': data.get('changed_count', 0),
+    })
 
 
 def snippets_file_api(request):
