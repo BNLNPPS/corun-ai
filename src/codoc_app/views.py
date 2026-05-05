@@ -1683,11 +1683,13 @@ def snippets_file_api(request):
 
 def snippets_view(request):
     """Render the snippets browser page."""
+    from .generate import get_or_create_snippet_review_def, DEFAULT_SNIPPET_REVIEW_PROMPT_TEMPLATE
     sec = Section.objects.filter(name='snippet-review', status='active').first()
-    jdef = JobDefinition.objects.filter(name='codoc-snippet-review', status='active').first()
+    jdef = get_or_create_snippet_review_def()
     return render(request, 'codoc_app/snippets.html', {
         'snippet_review_section_id': sec.id if sec else '',
-        'snippet_review_definition_id': jdef.id if jdef else '',
+        'snippet_review_definition_id': str(jdef.id),
+        'snippet_review_prompt_template': DEFAULT_SNIPPET_REVIEW_PROMPT_TEMPLATE,
     })
 
 
