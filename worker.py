@@ -600,7 +600,7 @@ class Worker:
                                     'cache_read': raw_usage.get('cache_read_input_tokens'),
                                     'cache_write': raw_usage.get('cache_creation_input_tokens'),
                                 }
-                            cost_usd = parsed.get('cost_usd')
+                            cost_usd = parsed.get('total_cost_usd')
                             if cost_usd is not None and tokens is not None:
                                 tokens['cost_usd'] = cost_usd
                             if content:
