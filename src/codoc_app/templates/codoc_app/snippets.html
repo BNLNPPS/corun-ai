@@ -50,13 +50,6 @@ body.light .snip-file-content { color: #1a1a1a; }
 {% block page %}
 <div class="snippets-wrap">
     {% csrf_token %}
-    <script>
-        window._SNIPPET_REVIEW_SECTION_ID = "{{ snippet_review_section_id|default:'' }}";
-        window._SNIPPET_REVIEW_DEFINITION_ID = "{{ snippet_review_definition_id|default:'' }}";
-        window._SNIPPET_REVIEW_PROMPT_TEMPLATE = "{{ snippet_review_prompt_template|default:''|escapejs }}";
-        window._SNIPPET_PR_DEFINITION_ID = "{{ snippet_pr_definition_id|default:'' }}";
-        window._SNIPPET_PR_PROMPT_TEMPLATE = "{{ snippet_pr_prompt_template|default:''|escapejs }}";
-    </script>
 
     <!-- Left: tree panel -->
     <div class="snip-tree-panel">
@@ -184,34 +177,20 @@ function selectFile(path) {
     showDetail(path);
 }
 
-function buildReviewHref(path, ghUrl, content) {
-    const tpl = window._SNIPPET_REVIEW_PROMPT_TEMPLATE || '';
-    const promptContent = tpl
-        .replace('{path}', path)
-        .replace('{gh_url}', ghUrl)
-        .replace('{content}', content || '');
+function buildReviewHref(path) {
     return '{% url "codoc:prepare" %}'
-        + '?section_id=' + encodeURIComponent(window._SNIPPET_REVIEW_SECTION_ID)
-        + '&definition_id=' + encodeURIComponent(window._SNIPPET_REVIEW_DEFINITION_ID)
-        + '&content=' + encodeURIComponent(promptContent);
+        + '?snippet_mode=review'
+        + '&snippet_path=' + encodeURIComponent(path);
 }
 
-function buildPrHref(path, ghUrl, content, reviewPageUrl) {
-    const tpl = window._SNIPPET_PR_PROMPT_TEMPLATE || '';
-    const basename = path.split('/').pop() || path;
-    const reviewSection = reviewPageUrl
-        ? 'Existing review on corun-ai: ' + reviewPageUrl + '\n'
-        : '';
-    const promptContent = tpl
-        .replace('{path}', path)
-        .replace('{gh_url}', ghUrl)
-        .replace('{basename}', basename)
-        .replace('{review_section}', reviewSection)
-        .replace('{content}', content || '');
-    return '{% url "codoc:prepare" %}'
-        + '?section_id=' + encodeURIComponent(window._SNIPPET_REVIEW_SECTION_ID)
-        + '&definition_id=' + encodeURIComponent(window._SNIPPET_PR_DEFINITION_ID)
-        + '&content=' + encodeURIComponent(promptContent);
+function buildPrHref(path, reviewPageUrl) {
+    let href = '{% url "codoc:prepare" %}'
+        + '?snippet_mode=pr'
+        + '&snippet_path=' + encodeURIComponent(path);
+    if (reviewPageUrl) {
+        href += '&review_page_url=' + encodeURIComponent(reviewPageUrl);
+    }
+    return href;
 }
 
 function showDetail(path) {
@@ -238,8 +217,8 @@ function showDetail(path) {
                 (msg ? ' — ' + msg : '') +
             '</div>' +
             '<div class="snip-detail-actions">' +
-                '<a class="snip-action-btn" id="snip-review-link" href="' + buildReviewHref(f.path, ghUrl, '') + '">Submit snippet review</a>' +
-                '<a class="snip-action-btn snip-pr-btn" id="snip-pr-link" href="' + buildPrHref(f.path, ghUrl, '', reviewPageUrl) + '">Review + generate PR</a>' +
+                '<a class="snip-action-btn" id="snip-review-link" href="' + buildReviewHref(f.path) + '">Submit snippet review</a>' +
+                '<a class="snip-action-btn snip-pr-btn" id="snip-pr-link" href="' + buildPrHref(f.path, reviewPageUrl) + '">Review + generate PR</a>' +
                 '<a class="snip-action-btn snip-gh-btn" href="' + ghUrl + '" target="_blank">View on GitHub</a>' +
                 reviewedBadge +
             '</div>' +
@@ -249,10 +228,10 @@ function showDetail(path) {
             '<pre class="snip-file-content" id="snip-file-content" style="display:none"></pre>' +
         '</div>';
 
-    fetchFileContent(path, ghUrl, reviewPageUrl);
+    fetchFileContent(path);
 }
 
-function fetchFileContent(path, ghUrl, reviewPageUrl) {
+function fetchFileContent(path) {
     const url = '{% url "codoc:snippets_file_api" %}?path=' + encodeURIComponent(path);
     fetch(url)
         .then(r => r.json())
@@ -271,15 +250,6 @@ function fetchFileContent(path, ghUrl, reviewPageUrl) {
             status.style.display = 'none';
             pre.textContent = data.content;
             pre.style.display = 'block';
-            // Update both action links with the full file content in the prompt.
-            const reviewLink = document.getElementById('snip-review-link');
-            if (reviewLink && ghUrl) {
-                reviewLink.href = buildReviewHref(path, ghUrl, data.content);
-            }
-            const prLink = document.getElementById('snip-pr-link');
-            if (prLink && ghUrl) {
-                prLink.href = buildPrHref(path, ghUrl, data.content, reviewPageUrl || '');
-            }
         })
         .catch(err => {
             const status = document.getElementById('snip-content-status');

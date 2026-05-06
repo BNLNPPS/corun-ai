@@ -25,6 +25,7 @@ import subprocess
 import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
+from pathlib import Path
 
 from decouple import config
 
@@ -36,8 +37,22 @@ CACHE_PATH = config(
     default='/var/www/corun-ai/data/snippets_cache.json',
 )
 SNIPPETS_REPO = 'eic/snippets'
+SNIPPETS_REPO_PATH = Path(config(
+    'CORUN_SNIPPETS_REPO_PATH',
+    default='/home/admin/github/snippets',
+)).expanduser()
 MAX_WORKERS = 20
 GH_PER_CALL_TIMEOUT = 15  # seconds
+MAX_SNIPPET_TEXT_BYTES = config(
+    'CORUN_SNIPPETS_MAX_TEXT_BYTES',
+    default=750_000,
+    cast=int,
+)
+BINARY_EXTENSIONS = frozenset({
+    'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'svg', 'ico', 'tiff',
+    'pdf', 'zip', 'tar', 'gz', 'bz2', 'xz', 'o', 'a', 'so', 'dylib',
+    'exe', 'bin', 'pyc', 'root',
+})
 
 # Minimum core-API budget required before starting a refresh.
 # A full rebuild is 1 tree call + N file-commit calls (one per file).
@@ -127,6 +142,75 @@ def load_cache() -> dict | None:
     if data.get('schema_version') != SCHEMA_VERSION:
         return None
     return data
+
+
+class SnippetContentError(RuntimeError):
+    """User-visible reason a snippet file cannot be read from checkout."""
+
+    def __init__(self, message: str, status: int = 400, *, binary: bool = False):
+        super().__init__(message)
+        self.status = status
+        self.binary = binary
+
+
+def get_cached_file(path: str) -> dict | None:
+    """Return the trusted cache entry for a snippets path, if present."""
+    cache = load_cache()
+    if not cache:
+        return None
+    for entry in cache.get('files') or []:
+        if entry.get('path') == path:
+            return entry
+    return None
+
+
+def _resolve_checkout_path(path: str) -> tuple[Path, dict]:
+    """Resolve a trusted snippets path to a file under SNIPPETS_REPO_PATH."""
+    entry = get_cached_file(path)
+    if not entry:
+        raise SnippetContentError('file not found', status=404)
+
+    safe_path = entry['path']
+    root = SNIPPETS_REPO_PATH.resolve()
+    full = (root / safe_path).resolve()
+    try:
+        inside = full.is_relative_to(root)
+    except AttributeError:
+        inside = str(full).startswith(str(root) + os.sep)
+    if not inside:
+        raise SnippetContentError('invalid file path', status=400)
+    if not full.is_file():
+        raise SnippetContentError('file not available in local checkout', status=404)
+    return full, entry
+
+
+def read_snippet_text(path: str) -> dict:
+    """Read a trusted snippet file from the cron-updated local checkout."""
+    full, entry = _resolve_checkout_path(path)
+    ext = path.rsplit('.', 1)[-1].lower() if '.' in path else ''
+    if ext in BINARY_EXTENSIONS:
+        raise SnippetContentError('binary file - preview not available', binary=True)
+
+    size = entry.get('size')
+    if isinstance(size, int) and size > MAX_SNIPPET_TEXT_BYTES:
+        raise SnippetContentError(
+            f'file is too large for inline review ({size} bytes)',
+            status=413,
+        )
+
+    with open(full, 'rb') as f:
+        raw = f.read(MAX_SNIPPET_TEXT_BYTES + 1)
+    if len(raw) > MAX_SNIPPET_TEXT_BYTES:
+        raise SnippetContentError(
+            f'file is too large for inline review (>{MAX_SNIPPET_TEXT_BYTES} bytes)',
+            status=413,
+        )
+
+    return {
+        'path': entry['path'],
+        'content': raw.decode('utf-8', errors='replace'),
+        'size': len(raw),
+    }
 
 
 def _atomic_write(data: dict) -> None:
