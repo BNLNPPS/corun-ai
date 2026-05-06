@@ -112,12 +112,12 @@ class RunningJob:
     `tjai_entry_id` is the UUID of the tjai work entry being polled.
     """
     __slots__ = ('job_id', 'prompt_id', 'job_def_id', 'process', 'timeout', 'started',
-                 'use_gemini', 'use_remote', 'job_dir', 'tjai_entry_id',
+                 'use_gemini', 'use_remote', 'output_json', 'job_dir', 'tjai_entry_id',
                  'remote_model', 'next_poll')
 
     def __init__(self, job_id, prompt_id, job_def_id, process, timeout,
                  use_gemini=False, job_dir=None, use_remote=False,
-                 tjai_entry_id=None, remote_model=None):
+                 tjai_entry_id=None, remote_model=None, output_json=False):
         self.job_id = job_id
         self.prompt_id = prompt_id
         self.job_def_id = job_def_id
@@ -126,6 +126,7 @@ class RunningJob:
         self.started = time.monotonic()
         self.use_gemini = use_gemini
         self.use_remote = use_remote
+        self.output_json = output_json
         self.job_dir = job_dir
         self.tjai_entry_id = tjai_entry_id
         self.remote_model = remote_model
@@ -358,7 +359,7 @@ class Worker:
             cmd = [
                 claude_path, '-p',
                 '--system-prompt', system_prompt.content,
-                '--output-format', 'text',
+                '--output-format', 'json',
                 '--model', model,
                 # Batch pipeline — nobody is there to answer permission
                 # prompts. Tools are fenced by .mcp.json below (only the
@@ -444,6 +445,7 @@ class Worker:
             timeout=timeout,
             use_gemini=use_gemini,
             use_remote=use_remote,
+            output_json=(not use_gemini and not use_remote and model not in DEEPSEEK_MODELS),
             job_dir=job_dir if use_gemini else None,
             tjai_entry_id=tjai_entry_id if use_remote else None,
             remote_model=model if use_remote else None,
@@ -585,7 +587,34 @@ class Worker:
                         self._finish_job(rj, 'failed',
                                          f'Gemini produced no output (rc={retcode}, stderr: {stderr})')
                 elif retcode == 0 and stdout.strip():
-                    self._complete_job(rj, stdout.strip(), elapsed, stderr=stderr)
+                    if rj.output_json:
+                        try:
+                            parsed = json.loads(stdout)
+                            content = (parsed.get('result') or '').strip()
+                            tokens = None
+                            raw_usage = parsed.get('usage') or {}
+                            if raw_usage:
+                                tokens = {
+                                    'input': raw_usage.get('input_tokens'),
+                                    'output': raw_usage.get('output_tokens'),
+                                    'cache_read': raw_usage.get('cache_read_input_tokens'),
+                                    'cache_write': raw_usage.get('cache_creation_input_tokens'),
+                                }
+                            cost_usd = parsed.get('total_cost_usd')
+                            if cost_usd is not None and tokens is not None:
+                                tokens['cost_usd'] = cost_usd
+                            if content:
+                                self._complete_job(rj, content, elapsed, stderr=stderr, tokens=tokens)
+                            else:
+                                self._finish_job(rj, 'failed', 'CLI JSON result was empty')
+                        except (json.JSONDecodeError, AttributeError) as exc:
+                            _log('warning',
+                                 f'Job {rj.job_id}: failed to parse JSON output ({exc}); '
+                                 'falling back to raw stdout',
+                                 job_id=rj.job_id)
+                            self._complete_job(rj, stdout.strip(), elapsed, stderr=stderr)
+                    else:
+                        self._complete_job(rj, stdout.strip(), elapsed, stderr=stderr)
                 elif retcode == 0:
                     self._finish_job(rj, 'failed',
                                      f'CLI returned empty output (stderr: {stderr})')
@@ -607,7 +636,7 @@ class Worker:
                     pass
                 self._finish_job(rj, 'failed', f'Timed out after {rj.timeout}s')
 
-    def _complete_job(self, rj, content_md, elapsed, has_thinking=False, stderr=None):
+    def _complete_job(self, rj, content_md, elapsed, has_thinking=False, stderr=None, tokens=None):
         try:
             job = Job.objects.get(id=rj.job_id)
             prompt = Prompt.objects.get(id=rj.prompt_id)
@@ -650,6 +679,7 @@ class Worker:
                 **job.data,
                 'result_page_group_id': str(page.group_id),
                 'timing': round(elapsed, 1),
+                **(({'tokens': tokens}) if tokens else {}),
             }
             job.save(update_fields=['status', 'data', 'modified_at'])
 
