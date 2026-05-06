@@ -7,6 +7,7 @@ Versioning is in-table: each row is a version, group_id ties versions together.
 
 import uuid
 
+from decouple import config
 from django.conf import settings
 
 # Model registry: (value, label, group). Single source of truth.
@@ -74,7 +75,7 @@ MCP_SERVERS = {
     'github': {
         'label': 'GitHub',
         'config': {
-            'command': '/home/admin/bin/github-mcp-server',
+            'command': config('CORUN_GITHUB_MCP_PATH', default='/home/admin/bin/github-mcp-server'),
             'args': ['stdio'],
         },
     },

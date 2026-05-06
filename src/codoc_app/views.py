@@ -7,6 +7,7 @@ import subprocess
 import sys
 import uuid
 from datetime import datetime, timedelta, timezone
+from urllib.parse import quote, unquote
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -360,6 +361,8 @@ def prepare_prompt(request):
     #   ?source_job=<uuid>  — pull section/content/definition from an existing job.
     #   ?section_id=<uuid>&definition_id=<uuid>&content=<str>  — direct prefill
     #     (e.g. from the Submit PR review button on /doc/prs/).
+    #   ?snippet_path=<path>&snippet_mode=review|pr — load eic/snippets content
+    #     server-side from the cron-updated local checkout.
     prefill = {'section_id': '', 'content': '', 'definition_id': ''}
     if request.method == 'GET':
         source_job_id = request.GET.get('source_job', '').strip()
@@ -374,11 +377,20 @@ def prepare_prompt(request):
                     'definition_id': str(src.definition_id),
                 }
         else:
-            prefill = {
-                'section_id': request.GET.get('section_id', '').strip(),
-                'content': request.GET.get('content', ''),
-                'definition_id': request.GET.get('definition_id', '').strip(),
-            }
+            snippet_path = request.GET.get('snippet_path', '').strip()
+            if snippet_path:
+                prefill = _snippet_prepare_prefill(
+                    request,
+                    snippet_path,
+                    mode=request.GET.get('snippet_mode', 'review').strip(),
+                    review_page_url=request.GET.get('review_page_url', '').strip(),
+                )
+            else:
+                prefill = {
+                    'section_id': request.GET.get('section_id', '').strip(),
+                    'content': request.GET.get('content', ''),
+                    'definition_id': request.GET.get('definition_id', '').strip(),
+                }
 
     if request.method == 'POST':
         section_id = request.POST.get('section')
@@ -652,6 +664,7 @@ def queue_status_api(request):
             'started': started,
             'started_iso': started_iso,
             'timing': j.data.get('timing'),
+            'tokens': j.data.get('tokens'),
             'error': j.data.get('error', '')[:200] if j.data.get('error') else None,
             'page_group_id': j.data.get('result_page_group_id'),
             'user': (
@@ -1512,6 +1525,223 @@ def epic_prs_view(request):
         'pr_review_section_id': sec.id if sec else '',
         'pr_review_definition_id': jdef.id if jdef else '',
     })
+
+
+# ── Snippets ─────────────────────────────────────────────────────────────────
+
+# Repository used by the snippets feature. Also used in the reviewed-path
+# regex so there is a single source of truth.
+_SNIPPETS_REPO = 'eic/snippets'
+# Regex to extract the file path portion from a snippets blob URL in a prompt.
+# Built from _SNIPPETS_REPO to keep them in sync.
+_SNIPPETS_URL_PATH_RE = re.compile(
+    r'https://github\.com/' + re.escape(_SNIPPETS_REPO) + r'/blob/[^/\s]+/([^\s"\']+)'
+)
+
+
+def _snippet_prepare_prefill(request, path: str, *, mode: str, review_page_url: str = '') -> dict:
+    """Build /prepare/ prefill content for a snippets review or PR job."""
+    from .generate import (
+        DEFAULT_SNIPPET_PR_PROMPT_TEMPLATE,
+        DEFAULT_SNIPPET_REVIEW_PROMPT_TEMPLATE,
+        get_or_create_snippet_pr_def,
+        get_or_create_snippet_review_def,
+    )
+    from .snippets_cache import SnippetContentError, read_snippet_text
+
+    sec, _ = Section.objects.get_or_create(
+        name='snippet-review',
+        defaults={
+            'title': 'Snippet Review',
+            'description': 'Reviews of eic/snippets files',
+            'status': 'active',
+        },
+    )
+    is_pr = mode == 'pr'
+    job_def = get_or_create_snippet_pr_def() if is_pr else get_or_create_snippet_review_def()
+
+    try:
+        snippet = read_snippet_text(path)
+    except SnippetContentError as e:
+        messages.error(request, f'Cannot prepare snippet review for {path}: {e}')
+        return {
+            'section_id': str(sec.id),
+            'content': '',
+            'definition_id': str(job_def.id),
+        }
+    except OSError as e:
+        logger.error('prepare snippet checkout read failed for path %s: %s', path, e, exc_info=True)
+        messages.error(request, f'Cannot prepare snippet review for {path}: local checkout read failed')
+        return {
+            'section_id': str(sec.id),
+            'content': '',
+            'definition_id': str(job_def.id),
+        }
+
+    safe_path = snippet['path']
+    gh_url = f'https://github.com/{_SNIPPETS_REPO}/blob/main/{quote(safe_path)}'
+    if is_pr:
+        basename = safe_path.rsplit('/', 1)[-1]
+        review_section = (
+            f'Existing review on corun-ai: {review_page_url}\n'
+            if review_page_url else ''
+        )
+        content = (DEFAULT_SNIPPET_PR_PROMPT_TEMPLATE
+                   .replace('{path}', safe_path)
+                   .replace('{gh_url}', gh_url)
+                   .replace('{basename}', basename)
+                   .replace('{review_section}', review_section)
+                   .replace('{content}', snippet['content']))
+    else:
+        content = (DEFAULT_SNIPPET_REVIEW_PROMPT_TEMPLATE
+                   .replace('{path}', safe_path)
+                   .replace('{gh_url}', gh_url)
+                   .replace('{content}', snippet['content']))
+
+    return {
+        'section_id': str(sec.id),
+        'content': content,
+        'definition_id': str(job_def.id),
+    }
+
+
+def _spawn_snippets_cache_refresh(fn_name: str) -> None:
+    """Spawn a background process to run snippets_cache.<fn_name>()."""
+    import os
+    subprocess.Popen(
+        [sys.executable, '-c',
+         'import django, os; os.environ.setdefault("DJANGO_SETTINGS_MODULE", "corun_project.settings"); '
+         f'django.setup(); from codoc_app.snippets_cache import {fn_name}; {fn_name}()'],
+        cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+
+
+def snippets_api(request):
+    """Serve cached snippets tree. Same cold-start / stale handling as
+    epic_prs_api: fires a background rebuild if cache is missing or stale,
+    returns what we have (or a refreshing stub) immediately.
+    """
+    from .snippets_cache import load_cache, SCHEMA_VERSION
+
+    data = load_cache()
+
+    if data is None:
+        _spawn_snippets_cache_refresh('refresh_full')
+        return JsonResponse({
+            'files': [], 'generated': None,
+            'status': 'refreshing', 'schema_version': SCHEMA_VERSION,
+        })
+
+    try:
+        gen = datetime.fromisoformat(data['generated'])
+        stale = (datetime.now(timezone.utc) - gen).total_seconds() > 1800  # 30 min
+    except (KeyError, ValueError):
+        stale = True
+
+    if stale:
+        _spawn_snippets_cache_refresh('refresh_delta')
+
+    # Tag files with whether a codoc snippet review has been completed for them.
+    # "Reviewed" = at least one completed codoc-snippet-review Job whose linked
+    # Prompt content references the file's GitHub URL.
+    # Also track the most-recent review page URL per path for use in PR prompts.
+    snippet_review_def = JobDefinition.objects.filter(name='codoc-snippet-review').first()
+    reviewed_paths: set[str] = set()
+    review_page_urls: dict[str, str] = {}
+    if snippet_review_def:
+        for j in Job.objects.filter(
+            definition=snippet_review_def, status='completed', prompt__isnull=False,
+        ).select_related('prompt').order_by('created_at'):
+            page_group = j.data.get('result_page_group_id')
+            for m in _SNIPPETS_URL_PATH_RE.finditer(j.prompt.content or ''):
+                path_key = unquote(m.group(1))
+                reviewed_paths.add(path_key)
+                if page_group:
+                    review_page_urls[path_key] = request.build_absolute_uri(
+                        f'/doc/page/{page_group}/'
+                    )
+
+    for f in data.get('files') or []:
+        f['reviewed'] = f.get('path') in reviewed_paths
+        if f.get('path') in review_page_urls:
+            f['review_page_url'] = review_page_urls[f['path']]
+
+    return JsonResponse(data)
+
+
+@require_POST
+@login_required
+def snippets_refresh_api(request):
+    """Forced delta refresh triggered by the Update button on /doc/snippets/."""
+    from .snippets_cache import refresh_delta, RATE_LIMIT_FLOOR
+    from .prs_cache import check_rate_limit
+
+    rl = check_rate_limit()
+    remaining = rl.get('remaining')
+    if remaining is None:
+        logger.error('snippets_refresh_api: rate-limit precheck failed: %s', rl.get('error'))
+        return JsonResponse({
+            'ok': False,
+            'reason': 'rate-limit precheck failed',
+        }, status=503)
+    if remaining < RATE_LIMIT_FLOOR:
+        return JsonResponse({
+            'ok': False,
+            'reason': 'insufficient GitHub rate-limit headroom; try again later',
+        }, status=429)
+
+    try:
+        refresh_delta()
+    except Exception:
+        logger.error('snippets_refresh_api: refresh failed', exc_info=True)
+        return JsonResponse({'ok': False, 'reason': 'refresh failed'}, status=500)
+
+    # The caller's JS reloads the full file list from snippets_api after success.
+    return JsonResponse({'ok': True})
+
+
+def snippets_file_api(request):
+    """Fetch raw content of a single file from the local eic/snippets checkout.
+
+    Returns {'content': '<text>', 'encoding': 'utf-8'} on success, or
+    {'error': '...'} on failure.  Binary/image files return {'binary': true}.
+    """
+    from .snippets_cache import SnippetContentError, read_snippet_text
+
+    path = request.GET.get('path', '').strip()
+    if not path:
+        return JsonResponse({'error': 'path parameter required'}, status=400)
+
+    try:
+        snippet = read_snippet_text(path)
+    except SnippetContentError as e:
+        if e.binary:
+            return JsonResponse({'binary': True})
+        return JsonResponse({'error': str(e)}, status=e.status)
+    except OSError:
+        logger.error('snippets_file_api: checkout read failed for path %s', path, exc_info=True)
+        return JsonResponse({'error': 'failed to read local checkout'}, status=502)
+
+    return JsonResponse({'content': snippet['content'], 'encoding': 'utf-8'})
+
+
+def snippets_view(request):
+    """Render the snippets browser page."""
+    from .generate import (
+        get_or_create_snippet_review_def, get_or_create_snippet_pr_def,
+    )
+    Section.objects.get_or_create(
+        name='snippet-review',
+        defaults={
+            'title': 'Snippet Review',
+            'description': 'Reviews of eic/snippets files',
+            'status': 'active',
+        },
+    )
+    get_or_create_snippet_review_def()
+    get_or_create_snippet_pr_def()
+    return render(request, 'codoc_app/snippets.html')
 
 
 # ── Account ──────────────────────────────────────────────────────────────────

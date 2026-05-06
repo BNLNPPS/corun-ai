@@ -54,4 +54,8 @@ urlpatterns = [
     path('prs/', views.epic_prs_view, name='epic_prs'),
     path('_api/prs/', views.epic_prs_api, name='epic_prs_api'),
     path('_api/prs/refresh/', views.epic_prs_refresh_api, name='epic_prs_refresh_api'),
+    path('snippets/', views.snippets_view, name='snippets'),
+    path('_api/snippets/', views.snippets_api, name='snippets_api'),
+    path('_api/snippets/refresh/', views.snippets_refresh_api, name='snippets_refresh_api'),
+    path('_api/snippets/file/', views.snippets_file_api, name='snippets_file_api'),
 ]
