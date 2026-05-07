@@ -71,6 +71,8 @@ class PromptCreateView(APIView):
         content = ser.validated_data['content']
         group_id = uuid.uuid4()
 
+        definition_id = ser.validated_data.get('definition_id')
+
         prompt = Prompt.objects.create(
             group_id=group_id,
             version=1,
@@ -79,6 +81,7 @@ class PromptCreateView(APIView):
             content=content,
             submitted_by=request.user,
             status='pending',
+            data={'definition_id': str(definition_id)} if definition_id else {},
         )
         return Response(PromptDetailSerializer(prompt).data, status=status.HTTP_201_CREATED)
 
@@ -136,12 +139,8 @@ class JobCreateView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        job = Job.objects.create(
-            definition=definition,
-            prompt=prompt,
-            triggered_by=request.user,
-            status='queued',
-        )
+        from codoc_app.generate import start_generation
+        job = start_generation(prompt, definition, triggered_by=request.user)
         return Response(JobDetailSerializer(job).data, status=status.HTTP_201_CREATED)
 
 
@@ -161,7 +160,12 @@ class JobAbortView(APIView):
             )
 
         job.status = 'cancelled'
-        job.save(update_fields=['status', 'modified_at'])
+        job.data = {**job.data, 'error': 'Aborted by user'}
+        job.save(update_fields=['status', 'data', 'modified_at'])
+
+        if job.prompt:
+            job.prompt.status = 'saved'
+            job.prompt.save(update_fields=['status', 'modified_at'])
         return Response(JobDetailSerializer(job).data)
 
 
