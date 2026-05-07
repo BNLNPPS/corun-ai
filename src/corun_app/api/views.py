@@ -121,7 +121,7 @@ class JobCreateView(APIView):
             return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
 
         prompt_group_id = ser.validated_data['prompt_group_id']
-        definition_id = ser.validated_data['definition_id']
+        definition_id = ser.validated_data.get('definition_id')
 
         try:
             prompt = Prompt.objects.get(group_id=prompt_group_id, is_current=True)
@@ -131,13 +131,22 @@ class JobCreateView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        try:
-            definition = JobDefinition.objects.get(id=definition_id, status='active')
-        except JobDefinition.DoesNotExist:
-            return Response(
-                {'definition_id': 'No active JobDefinition with this id.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        # Resolve definition: (1) explicit, (2) stored on prompt, (3) default.
+        definition = None
+        if definition_id:
+            definition = JobDefinition.objects.filter(id=definition_id, status='active').first()
+            if definition is None:
+                return Response(
+                    {'definition_id': 'No active JobDefinition with this id.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        if definition is None:
+            stored_id = prompt.data.get('definition_id')
+            if stored_id:
+                definition = JobDefinition.objects.filter(id=stored_id, status='active').first()
+        if definition is None:
+            from codoc_app.generate import get_or_create_default_def
+            definition = get_or_create_default_def()
 
         from codoc_app.generate import start_generation
         job = start_generation(prompt, definition, triggered_by=request.user)

@@ -84,4 +84,4 @@ class PromptCreateSerializer(serializers.Serializer):
 
 class JobCreateSerializer(serializers.Serializer):
     prompt_group_id = serializers.UUIDField()
-    definition_id = serializers.UUIDField()
+    definition_id = serializers.UUIDField(required=False, allow_null=True)
