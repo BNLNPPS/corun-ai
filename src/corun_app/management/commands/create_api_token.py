@@ -5,7 +5,7 @@ Usage:
     python manage.py create_api_token <username>
 
 Prints the token key to stdout. Idempotent — if a token already exists
-for this user it is returned unchanged; pass --reset to regenerate it.
+for this user it is returned unchanged; pass --rotate to regenerate it.
 """
 
 import traceback
@@ -22,7 +22,7 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument('username', help='Username of the service account')
         parser.add_argument(
-            '--reset',
+            '--rotate',
             action='store_true',
             help='Delete and regenerate the token instead of returning the existing one',
         )
@@ -37,10 +37,10 @@ class Command(BaseCommand):
             raise CommandError(f'User "{username}" does not exist.')
 
         try:
-            if options['reset']:
+            if options['rotate']:
                 Token.objects.filter(user=user).delete()
                 token = Token.objects.create(user=user)
-                self.stdout.write(self.style.WARNING(f'Token reset for user "{username}".'))
+                self.stdout.write(self.style.WARNING(f'Token rotated for user "{username}".'))
             else:
                 token, created = Token.objects.get_or_create(user=user)
                 if created:
