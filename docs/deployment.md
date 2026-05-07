@@ -36,7 +36,7 @@ Runs `manage.py run_worker` — polls for queued jobs, executes them.
 cd /home/admin/github/corun-ai
 ./deploy/update_from_dev.sh
 
-# 2. If models changed, run migrations (required on first deploy of api-token-auth branch)
+# 2. If models changed, run migrations (required on first deploy that includes DRF authtoken support)
 cd /var/www/corun-ai
 .venv/bin/python src/manage.py migrate
 
@@ -68,7 +68,7 @@ cd /var/www/corun-ai
 .venv/bin/python src/manage.py create_api_token <username>
 
 # Force-regenerate the token (invalidates the old key)
-.venv/bin/python src/manage.py create_api_token <username> --reset
+.venv/bin/python src/manage.py create_api_token <username> --rotate
 ```
 
 The command prints the token key to stdout. Treat it like a password — store it

@@ -111,7 +111,7 @@ cd /var/www/corun-ai
 # Prints the token key. Keep it secret — treat like a password.
 
 # To regenerate a token:
-.venv/bin/python src/manage.py create_api_token <username> --reset
+.venv/bin/python src/manage.py create_api_token <username> --rotate
 ```
 
 ### Endpoints
