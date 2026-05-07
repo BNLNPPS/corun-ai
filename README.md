@@ -93,6 +93,41 @@ All models use UUID primary keys, JSONField `data` for metadata, and `created_at
 | **UserProfile** | Theme preference |
 | **SiteContent** | Editable static content (about page) |
 
+## REST API (Token Authentication)
+
+Machine clients (e.g. MCP servers) authenticate with a bearer token:
+
+```
+Authorization: Token <token>
+```
+
+All API endpoints are under `/api/v1/`.
+
+### Creating a token for a service account
+
+```bash
+cd /var/www/corun-ai
+.venv/bin/python src/manage.py create_api_token <username>
+# Prints the token key. Keep it secret — treat like a password.
+
+# To regenerate a token:
+.venv/bin/python src/manage.py create_api_token <username> --reset
+```
+
+### Endpoints
+
+| Method | URL | Description |
+|--------|-----|-------------|
+| GET | `/api/v1/sections/` | List active Sections |
+| GET | `/api/v1/sections/<name>/` | Section detail + current Prompts |
+| GET | `/api/v1/prompts/<group_id>/` | Prompt detail (content, status, version) |
+| GET | `/api/v1/pages/<group_id>/` | Page detail (rendered content, metadata) |
+| GET | `/api/v1/jobs/<job_id>/` | Job status and result_page_group_id |
+| GET | `/api/v1/definitions/` | List active JobDefinitions |
+| POST | `/api/v1/prompts/` | Create a new prompt |
+| POST | `/api/v1/jobs/` | Submit a generation job |
+| POST | `/api/v1/jobs/<job_id>/abort/` | Cancel a running/queued job |
+
 ## Job System
 
 See [docs/job-system.md](docs/job-system.md) for full details.

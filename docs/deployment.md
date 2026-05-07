@@ -36,13 +36,53 @@ Runs `manage.py run_worker` — polls for queued jobs, executes them.
 cd /home/admin/github/corun-ai
 ./deploy/update_from_dev.sh
 
-# 2. If models changed, run migrations
+# 2. If models changed, run migrations (required on first deploy of api-token-auth branch)
 cd /var/www/corun-ai
 .venv/bin/python src/manage.py migrate
 
 # 3. If generation code changed, restart worker
 # (wait for running jobs to finish first)
 sudo supervisorctl restart corun-worker
+```
+
+## API Token Management
+
+API tokens allow machine clients (e.g. MCP servers) to authenticate with corun-ai
+over HTTP using `Authorization: Token <key>` headers.
+
+### First-time setup
+
+Run the `authtoken` migration if not already done:
+
+```bash
+cd /var/www/corun-ai
+.venv/bin/python src/manage.py migrate authtoken
+```
+
+### Creating a token for a service account
+
+```bash
+cd /var/www/corun-ai
+
+# Create or retrieve an existing token
+.venv/bin/python src/manage.py create_api_token <username>
+
+# Force-regenerate the token (invalidates the old key)
+.venv/bin/python src/manage.py create_api_token <username> --reset
+```
+
+The command prints the token key to stdout. Treat it like a password — store it
+in the MCP server's environment/config, never in source control.
+
+### Revoking a token
+
+```bash
+cd /var/www/corun-ai
+.venv/bin/python src/manage.py shell -c "
+from rest_framework.authtoken.models import Token
+Token.objects.filter(user__username='<username>').delete()
+print('Token deleted.')
+"
 ```
 
 The deploy script:
