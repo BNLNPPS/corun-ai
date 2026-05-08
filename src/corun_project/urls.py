@@ -6,5 +6,6 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('accounts/', include('django.contrib.auth.urls')),
     path('account/', account_view, name='account'),
+    path('api/', include('corun_app.api.urls')),
     path('', include('codoc_app.urls')),
 ]
