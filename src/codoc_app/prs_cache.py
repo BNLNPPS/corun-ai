@@ -32,10 +32,10 @@ from datetime import datetime, timezone, timedelta
 from decouple import config
 
 SCHEMA_VERSION = 2
-CACHE_PATH = config(
+CACHE_PATH = os.path.abspath(os.path.expanduser(config(
     'CORUN_PRS_CACHE_PATH',
     default='/var/www/corun-ai/data/epic_prs_cache.json',
-)
+)))
 CLOSED_WINDOW_DAYS = 30
 MAX_WORKERS = 10
 GH_PER_CALL_TIMEOUT = 15  # seconds

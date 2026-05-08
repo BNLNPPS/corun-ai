@@ -103,6 +103,7 @@ function setHTML(container, html) {
         s.textContent = old.textContent;
         old.replaceWith(s);
     });
+    codocTypeset(container);
 }
 
 function selectItem(idx, skipHistory) {

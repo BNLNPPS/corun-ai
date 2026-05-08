@@ -32,10 +32,10 @@ from decouple import config
 logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 1
-CACHE_PATH = config(
+CACHE_PATH = os.path.abspath(os.path.expanduser(config(
     'CORUN_SNIPPETS_CACHE_PATH',
     default='/var/www/corun-ai/data/snippets_cache.json',
-)
+)))
 SNIPPETS_REPO = 'eic/snippets'
 SNIPPETS_REPO_PATH = Path(config(
     'CORUN_SNIPPETS_REPO_PATH',

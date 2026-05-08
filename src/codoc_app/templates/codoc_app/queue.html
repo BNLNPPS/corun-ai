@@ -47,6 +47,17 @@ function formatTokens(t) {
 }
 
 function truncate(s, n) { return s.length > n ? s.slice(0, n) + '…' : s; }
+function escHtml(s) {
+    const d = document.createElement('div');
+    d.textContent = s == null ? '' : String(s);
+    return d.innerHTML;
+}
+function safeStatus(s) {
+    return String(s || '').replace(/[^a-z0-9_-]/gi, '');
+}
+function safeId(s) {
+    return String(s || '').replace(/[^a-f0-9-]/gi, '');
+}
 
 // ── Sort state ─────────────────────────────────────────────────────────────────
 // Each table tracks its own sort key and direction independently.
@@ -113,14 +124,16 @@ function renderQueue(data) {
                 startedDisplay = j.started || j.created;
             }
         }
-        let promptCell = truncate(j.prompt || '—', 60);
+        const status = safeStatus(j.status);
+        const jobId = safeId(j.id);
+        let promptCell = escHtml(truncate(j.prompt || '—', 60));
         if (j.commented) promptCell += '<div style="color:var(--accent);font-size:11px;margin-top:2px">Commented</div>';
-        return '<tr><td>' + promptCell + '</td><td>' + j.definition +
-            '</td><td>' + (j.user || '') + '</td>' +
-            '<td><span class="status status-' + j.status + '">' + j.status + '</span></td>' +
-            '<td>' + startedDisplay + '</td>' +
-            '<td>' + elapsed + '</td>' +
-            '<td><button class="btn" style="background:#7f1d1d;font-size:11px;padding:2px 8px" onclick="abortJob(\'' + j.id + '\')">Abort</button></td></tr>';
+        return '<tr><td>' + promptCell + '</td><td>' + escHtml(j.definition) +
+            '</td><td>' + escHtml(j.user || '') + '</td>' +
+            '<td><span class="status status-' + status + '">' + escHtml(j.status) + '</span></td>' +
+            '<td>' + escHtml(startedDisplay) + '</td>' +
+            '<td>' + escHtml(elapsed) + '</td>' +
+            '<td><button class="btn" style="background:#7f1d1d;font-size:11px;padding:2px 8px" onclick="abortJob(\'' + jobId + '\')">Abort</button></td></tr>';
     }
 
     function renderActiveTable(rows, tableId) {
@@ -172,7 +185,7 @@ function renderQueue(data) {
                 const url = PAGE_URL.replace('00000000-0000-0000-0000-000000000000', j.page_group_id);
                 result = '<a href="' + url + '">View page</a>';
             }
-            if (j.error) result += '<span style="color:#c44;font-size:12px">' + truncate(j.error, 40) + '</span>';
+            if (j.error) result += '<span style="color:#c44;font-size:12px">' + escHtml(truncate(j.error, 40)) + '</span>';
             if (j.commented) result += '<div style="color:var(--accent);font-size:11px;margin-top:2px">Commented</div>';
 
             let timing = '—';
@@ -181,18 +194,20 @@ function renderQueue(data) {
                 timing = ts < 60 ? ts + 's' : Math.floor(ts/60) + 'm ' + (ts%60) + 's';
             }
 
+            const status = safeStatus(j.status);
+            const jobId = safeId(j.id);
             chtml += '<tr>' +
-                '<td>' + truncate(j.prompt || '—', 60) + '</td>' +
-                '<td>' + j.definition + '</td>' +
-                '<td>' + (j.user || '') + '</td>' +
-                '<td><span class="status status-' + j.status + '">' + j.status + '</span></td>' +
-                '<td style="white-space:nowrap">' + j.created + '</td>' +
+                '<td>' + escHtml(truncate(j.prompt || '—', 60)) + '</td>' +
+                '<td>' + escHtml(j.definition) + '</td>' +
+                '<td>' + escHtml(j.user || '') + '</td>' +
+                '<td><span class="status status-' + status + '">' + escHtml(j.status) + '</span></td>' +
+                '<td style="white-space:nowrap">' + escHtml(j.created) + '</td>' +
                 '<td style="white-space:nowrap">' + timing + '</td>' +
                 '<td style="white-space:nowrap">' + formatTokens(j.tokens) + '</td>' +
                 '<td>' + result + '</td>' +
                 '<td>' +
-                    '<a class="btn" style="background:#14532d;font-size:11px;padding:2px 8px;margin-right:16px;text-decoration:none;display:inline-block" href="' + PREPARE_URL + '?source_job=' + j.id + '" title="Open the setup panel pre-filled from this job">Rerun</a>' +
-                    '<span style="color:#c44;cursor:pointer;font-size:16px" onclick="deleteJob(\'' + j.id + '\')" title="Delete">✕</span>' +
+                    '<a class="btn" style="background:#14532d;font-size:11px;padding:2px 8px;margin-right:16px;text-decoration:none;display:inline-block" href="' + PREPARE_URL + '?source_job=' + encodeURIComponent(j.id) + '" title="Open the setup panel pre-filled from this job">Rerun</a>' +
+                    '<span style="color:#c44;cursor:pointer;font-size:16px" onclick="deleteJob(\'' + jobId + '\')" title="Delete">✕</span>' +
                 '</td></tr>';
         });
         chtml += '</tbody></table>';
@@ -217,8 +232,8 @@ function renderQueue(data) {
                 prevRead = p.read_bytes;
                 prevWrite = p.write_bytes;
             }
-            lines.push('<span style="color:var(--text)">claude</span> pid ' + p.pid +
-                ' · cpu ' + p.cpu + '% · mem ' + p.mem + '% · ' + p.time + rate);
+            lines.push('<span style="color:var(--text)">claude</span> pid ' + escHtml(p.pid) +
+                ' · cpu ' + escHtml(p.cpu) + '% · mem ' + escHtml(p.mem) + '% · ' + escHtml(p.time) + escHtml(rate));
         });
         det.innerHTML = lines.join('<br>');
     } else {
@@ -253,4 +268,3 @@ setInterval(pollQueue, 5000);
 pollQueue();
 </script>
 {% endblock %}
-
