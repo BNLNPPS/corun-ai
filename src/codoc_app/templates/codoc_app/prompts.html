@@ -40,7 +40,9 @@ function setHTML(c, h) {
         s.textContent = old.textContent;
         old.replaceWith(s);
     });
-    codocTypeset(c);
+    if (window.MathJax?.typesetPromise) {
+        MathJax.typesetPromise([c]);
+    }
 }
 
 function loadPromptView(gid) {
