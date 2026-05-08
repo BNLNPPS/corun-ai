@@ -192,6 +192,31 @@ class Page(models.Model):
         return f"Page {self.group_id} v{self.version}"
 
 
+class PageTag(models.Model):
+    """Tags attached to a page group, independent of page versions."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    page_group_id = models.UUIDField(db_index=True)
+    tag_name = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
+    modified_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['tag_name']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['page_group_id', 'tag_name'],
+                name='unique_page_group_tag',
+            )
+        ]
+        indexes = [
+            models.Index(fields=['tag_name'], name='idx_page_tags_tag_name'),
+            models.Index(fields=['page_group_id', 'tag_name'], name='idx_page_tags_group_tag'),
+        ]
+
+    def __str__(self):
+        return f"{self.page_group_id}: {self.tag_name}"
+
+
 class Comment(models.Model):
     """Community discussion on a prompt or page."""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

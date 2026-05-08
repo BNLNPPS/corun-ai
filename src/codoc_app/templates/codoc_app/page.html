@@ -12,6 +12,8 @@
     {% if page.data.definition_name %} · <a href="{% url 'codoc:definitions' %}{% if page.data.definition_id %}?select={{ page.data.definition_id }}{% endif %}">{{ page.data.definition_name }}</a>{% elif page.data.generation_model %} · {{ page.data.generation_model }}{% endif %}
 </div>
 
+{% include "codoc_app/_page_curation.html" %}
+
 <h2 style="font-size:1.4em;font-weight:600;color:var(--accent);margin-top:16px;margin-bottom:6px">The prompt</h2>
 {% if page.data.prompt_content %}
 <div class="prompt-content">{{ page.data.prompt_content }}</div>
@@ -92,6 +94,28 @@ function deletePageComment(id) {
     }).then(r => r.json()).then(data => {
         if (data.ok) window.location.reload();
     });
+}
+function movePageSection(form) {
+    fetch('{% url "codoc:page_move_section" page.group_id %}', {
+        method: 'POST',
+        body: new FormData(form),
+        headers: {'X-CSRFToken': form.querySelector('[name=csrfmiddlewaretoken]').value},
+    }).then(r => r.json()).then(data => {
+        if (data.ok) window.location.reload();
+        else alert(data.error || 'Move failed');
+    }).catch(err => alert('Move failed: ' + err));
+    return false;
+}
+function updatePageTags(form) {
+    fetch('{% url "codoc:page_tags_update" page.group_id %}', {
+        method: 'POST',
+        body: new FormData(form),
+        headers: {'X-CSRFToken': form.querySelector('[name=csrfmiddlewaretoken]').value},
+    }).then(r => r.json()).then(data => {
+        if (data.ok) window.location.reload();
+        else alert(data.error || 'Tag update failed');
+    }).catch(err => alert('Tag update failed: ' + err));
+    return false;
 }
 </script>
 {% endblock %}

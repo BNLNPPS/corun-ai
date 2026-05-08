@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 from rest_framework import serializers
 
 from corun_app.models import (
-    Job, JobDefinition, JobNotificationSubscription, Page, Prompt, Section,
+    Job, JobDefinition, JobNotificationSubscription, Page, PageTag, Prompt, Section,
 )
 
 
@@ -49,14 +49,19 @@ class PromptDetailSerializer(serializers.ModelSerializer):
 
 class PageDetailSerializer(serializers.ModelSerializer):
     section_name = serializers.CharField(source='section.name', read_only=True)
+    tags = serializers.SerializerMethodField()
 
     class Meta:
         model = Page
         fields = [
             'id', 'group_id', 'version', 'is_current',
             'section', 'section_name', 'content', 'content_rendered',
-            'status', 'data', 'created_at', 'modified_at',
+            'status', 'tags', 'data', 'created_at', 'modified_at',
         ]
+
+    def get_tags(self, obj):
+        return list(PageTag.objects.filter(
+            page_group_id=obj.group_id).order_by('tag_name').values_list('tag_name', flat=True))
 
 
 class JobDefinitionSerializer(serializers.ModelSerializer):

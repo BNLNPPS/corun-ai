@@ -11,6 +11,7 @@ from urllib.parse import quote, unquote
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.db.models import Count, Q
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
@@ -19,11 +20,66 @@ from django.views.decorators.http import require_POST
 import markdown as md_lib
 
 from corun_app.models import (
-    AppLog, Comment, Job, JobDefinition, Page, Prompt, Section,
+    AppLog, Comment, Job, JobDefinition, Page, PageTag, Prompt, Section,
     SiteContent, SystemPrompt, UserProfile,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _can_manage_page(user, page):
+    if not user.is_authenticated:
+        return False
+    if user.is_staff or user.is_superuser:
+        return True
+    return bool(page.prompt and page.prompt.submitted_by_id == user.id)
+
+
+def _normalize_tag_list(raw_tags):
+    if isinstance(raw_tags, str):
+        candidates = re.split(r'[,\s]+', raw_tags)
+    else:
+        candidates = raw_tags or []
+    tags = []
+    seen = set()
+    for raw in candidates:
+        tag = str(raw).strip().lstrip(':')
+        if not tag:
+            continue
+        if not re.match(r'^[A-Za-z][A-Za-z0-9_-]*$', tag):
+            continue
+        key = tag.lower()
+        if key not in seen:
+            seen.add(key)
+            tags.append(tag)
+    return tags
+
+
+def _page_tags_for_groups(group_ids):
+    tags_by_group = {gid: [] for gid in group_ids}
+    if not group_ids:
+        return tags_by_group
+    for tag in PageTag.objects.filter(page_group_id__in=group_ids).order_by('tag_name'):
+        tags_by_group.setdefault(tag.page_group_id, []).append(tag.tag_name)
+    return tags_by_group
+
+
+def _apply_page_tags(pages):
+    group_ids = [page.group_id for page in pages]
+    tags_by_group = _page_tags_for_groups(group_ids)
+    for page in pages:
+        page.tags = tags_by_group.get(page.group_id, [])
+        page.tags_csv = ','.join(page.tags)
+
+
+def _set_page_tags(page, tags):
+    current = set(PageTag.objects.filter(
+        page_group_id=page.group_id).values_list('tag_name', flat=True))
+    desired = set(tags)
+    for tag_name in sorted(desired - current):
+        PageTag.objects.create(page_group_id=page.group_id, tag_name=tag_name)
+    for tag_name in current - desired:
+        PageTag.objects.filter(page_group_id=page.group_id, tag_name=tag_name).delete()
 
 
 # ── Browse (two-panel home) ──────────────────────────────────────────────────
@@ -47,7 +103,9 @@ def home(request):
             ).values_list('prompt_group').annotate(n=Count('id')).values_list('prompt_group', 'n')
         )
 
-        # For each prompt group, get all versions + their pages
+        # For each prompt group, get all versions + their pages that still
+        # belong in this section. Pages moved to another section are displayed
+        # as standalone pages in their target section below.
         browse_items = []
         # Also count page-level comments for each prompt group
         page_comment_by_group = dict(
@@ -61,8 +119,10 @@ def home(request):
             cp.comment_count = comment_counts.get(cp.group_id, 0) + page_comment_by_group.get(cp.group_id, 0)
             all_pages = list(Page.objects.filter(
                 prompt__group_id=cp.group_id,
+                section=sec,
                 is_current=True, status='published',
             ).select_related('prompt').order_by('-created_at'))
+            _apply_page_tags(all_pages)
             # Group pages by prompt content (not version row)
             # Pages from same-text versions go together under current
             pages_by_content = {}
@@ -70,6 +130,9 @@ def home(request):
                 pages_by_content.setdefault(page.prompt.content, []).append(page)
             # Current version gets pages matching its text
             cp.child_pages = pages_by_content.pop(cp.content, [])
+            cp.tags_csv = ','.join(sorted({
+                tag for page in cp.child_pages for tag in getattr(page, 'tags', [])
+            }))
             browse_items.append(cp)
             # Older versions only if they have pages with DIFFERENT text
             if pages_by_content:
@@ -80,6 +143,9 @@ def home(request):
                 for pv in older:
                     if pv.content in pages_by_content and pv.content not in seen_content:
                         pv.child_pages = pages_by_content[pv.content]
+                        pv.tags_csv = ','.join(sorted({
+                            tag for page in pv.child_pages for tag in getattr(page, 'tags', [])
+                        }))
                         browse_items.append(pv)
                         seen_content.add(pv.content)
 
@@ -97,17 +163,22 @@ def home(request):
                 for pg in getattr(item, 'child_pages', []):
                     pg.comment_count = page_comment_counts.get(pg.id, 0)
 
-        # Orphaned pages (no prompt) — show as standalone items
+        # Orphaned or moved pages — show as standalone items in Page.section.
         orphan_pages = list(Page.objects.filter(
-            section=sec, prompt__isnull=True,
+            Q(prompt__isnull=True) | ~Q(prompt__section=sec),
+            section=sec,
             is_current=True, status='published',
-        ).order_by('-created_at'))
+        ).select_related('prompt').order_by('-created_at'))
+        _apply_page_tags(orphan_pages)
 
         sec.browse_items = browse_items
         sec.orphan_pages = orphan_pages
 
+    tag_counts = list(PageTag.objects.values('tag_name').annotate(
+        count=Count('id')).order_by('tag_name'))
     return render(request, 'codoc_app/home.html', {
         'sections': sections,
+        'tag_counts': tag_counts,
     })
 
 
@@ -201,6 +272,7 @@ def prompt_fragment(request, group_id):
 def page_fragment(request, group_id):
     """AJAX fragment: page detail for right panel."""
     page = get_object_or_404(Page, group_id=group_id, is_current=True)
+    _apply_page_tags([page])
     # Find the definition used
     job_def = None
     if page.data.get('definition_id'):
@@ -209,8 +281,10 @@ def page_fragment(request, group_id):
         job = Job.objects.filter(prompt=page.prompt).order_by('-created_at').first()
         job_def = job.definition if job else None
     comments = Comment.objects.filter(page=page).select_related('author')
+    sections = Section.objects.filter(status='active').order_by('data__sort_order', 'name')
     html = render_to_string('codoc_app/_page_fragment.html', {
         'page': page, 'job_def': job_def, 'comments': comments,
+        'sections': sections, 'can_manage_page': _can_manage_page(request.user, page),
     }, request=request)
     return HttpResponse(html)
 
@@ -491,10 +565,50 @@ def prompt_delete(request, group_id):
 def page_delete(request, group_id):
     """Delete a page. Owner only."""
     page = get_object_or_404(Page, group_id=group_id, is_current=True)
-    if page.prompt.submitted_by != request.user:
+    if not _can_manage_page(request.user, page):
         return JsonResponse({'error': 'Not your page.'}, status=403)
     Page.objects.filter(group_id=group_id).delete()
+    PageTag.objects.filter(page_group_id=group_id).delete()
     return JsonResponse({'ok': True})
+
+
+@require_POST
+@login_required
+def page_move_section(request, group_id):
+    """Move the current page group to another section. Owner or admin only."""
+    page = get_object_or_404(Page, group_id=group_id, is_current=True)
+    if not _can_manage_page(request.user, page):
+        return JsonResponse({'error': 'Not your page.'}, status=403)
+
+    section_value = (request.POST.get('section') or '').strip()
+    section_query = Q(name=section_value)
+    try:
+        section_query |= Q(id=uuid.UUID(section_value))
+    except ValueError:
+        pass
+    section = Section.objects.filter(section_query, status='active').first()
+    if section is None:
+        return JsonResponse({'error': 'Unknown section.'}, status=400)
+
+    Page.objects.filter(group_id=group_id).update(section=section)
+    return JsonResponse({
+        'ok': True,
+        'section': section.name,
+        'section_title': section.title or section.name,
+    })
+
+
+@require_POST
+@login_required
+def page_tags_update(request, group_id):
+    """Replace tags for a page group. Owner or admin only."""
+    page = get_object_or_404(Page, group_id=group_id, is_current=True)
+    if not _can_manage_page(request.user, page):
+        return JsonResponse({'error': 'Not your page.'}, status=403)
+
+    tags = _normalize_tag_list(request.POST.get('tags', ''))
+    _set_page_tags(page, tags)
+    return JsonResponse({'ok': True, 'tags': tags, 'tags_csv': ','.join(tags)})
 
 
 # ── Version API ───────────────────────────────────────────────────────────────
@@ -539,8 +653,13 @@ def prompt_detail(request, group_id):
 
 def page_detail(request, group_id):
     page = get_object_or_404(Page, group_id=group_id, is_current=True)
+    _apply_page_tags([page])
     comments = list(Comment.objects.filter(page=page).select_related('author'))
-    return render(request, 'codoc_app/page.html', {'page': page, 'comments': comments})
+    sections = Section.objects.filter(status='active').order_by('data__sort_order', 'name')
+    return render(request, 'codoc_app/page.html', {
+        'page': page, 'comments': comments, 'sections': sections,
+        'can_manage_page': _can_manage_page(request.user, page),
+    })
 
 
 # ── Queue (job history) ─────────────────────────────────────────────────────

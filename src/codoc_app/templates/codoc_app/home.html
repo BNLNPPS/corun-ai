@@ -16,6 +16,14 @@
                     {% if user.is_authenticated %}<button class="btn" onclick="loadEditor()">New Prompt</button>{% endif %}
                 </div>
             </div>
+            {% if tag_counts %}
+            <div class="tag-bar" id="tag-filter-bar">
+                {% for tag in tag_counts %}
+                <span class="tag-chip" data-tag="{{ tag.tag_name }}">{{ tag.tag_name }} <span class="count">{{ tag.count }}</span></span>
+                {% endfor %}
+                <button class="btn" id="clear-tag-filter" style="font-size:11px;padding:1px 7px;display:none">clear</button>
+            </div>
+            {% endif %}
             <input type="text" class="browse-search" id="browse-search" placeholder="Search...">
         </div>
         <div class="browse-list" id="browse-list" tabindex="0">
@@ -23,7 +31,7 @@
             <div class="browse-section" data-section="{{ sec.name }}" onclick="toggleTree(this.querySelector('.tree-toggle'))" style="cursor:pointer"><span class="tree-toggle" data-target="sec-{{ sec.name }}" style="margin-right:4px">&#9654;</span>{{ sec.title|default:sec.name }}</div>
             <div class="tree-children" id="sec-{{ sec.name }}" style="display:none">
                 {% for p in sec.browse_items %}
-                <div class="browse-item" data-type="prompt" data-id="{{ p.group_id }}" data-vid="{{ p.id }}" tabindex="-1" style="display:flex;gap:0;align-items:flex-start">
+                <div class="browse-item" data-type="prompt" data-id="{{ p.group_id }}" data-vid="{{ p.id }}" data-tags="{{ p.tags_csv }}" tabindex="-1" style="display:flex;gap:0;align-items:flex-start">
                     {% if p.child_pages %}<span class="tree-toggle" data-target="pages-{{ p.id }}" style="margin-top:2px">&#9654;</span>{% endif %}
                     <div style="flex:1;min-width:0{% if not p.child_pages %};padding-left:14px{% endif %}">
                         <div class="browse-item-title">{{ p.content|prompt_title }}</div>
@@ -33,17 +41,18 @@
                 {% if p.child_pages %}
                 <div class="tree-children" id="pages-{{ p.id }}" style="display:none">
                     {% for pg in p.child_pages %}
-                    <div class="browse-item browse-item-child browse-page" data-type="page" data-id="{{ pg.group_id }}" tabindex="-1">
+                    <div class="browse-item browse-item-child browse-page" data-type="page" data-id="{{ pg.group_id }}" data-tags="{{ pg.tags_csv }}" tabindex="-1">
                         <div class="browse-item-title">{{ pg.data.definition_name|default:pg.data.generation_model|default:"page" }} · {{ pg.created_at|date:"M j H:i" }}{% if pg.comment_count %} · <span style="color:var(--accent)">{{ pg.comment_count }}</span>{% endif %}</div>
+                        {% if pg.tags %}<div class="browse-item-meta">{% for tag in pg.tags %}<span class="tag-label" data-tag="{{ tag }}">{{ tag }}</span>{% if not forloop.last %} {% endif %}{% endfor %}</div>{% endif %}
                     </div>
                     {% endfor %}
                 </div>
                 {% endif %}
                 {% endfor %}
                 {% for pg in sec.orphan_pages %}
-                <div class="browse-item" data-type="page" data-id="{{ pg.group_id }}" tabindex="-1">
+                <div class="browse-item" data-type="page" data-id="{{ pg.group_id }}" data-tags="{{ pg.tags_csv }}" tabindex="-1">
                     <div class="browse-item-title">{{ pg.data.prompt_content|default:pg.content|truncatewords:12 }}</div>
-                    <div class="browse-item-meta">{{ pg.data.generation_model|default:"" }} · {{ pg.created_at|date:"M j H:i" }}</div>
+                    <div class="browse-item-meta">{{ pg.data.generation_model|default:"" }} · {{ pg.created_at|date:"M j H:i" }}{% if pg.tags %} · {% for tag in pg.tags %}<span class="tag-label" data-tag="{{ tag }}">{{ tag }}</span>{% if not forloop.last %} {% endif %}{% endfor %}{% endif %}</div>
                 </div>
                 {% endfor %}
             </div>
@@ -94,6 +103,9 @@ const items = document.querySelectorAll('.browse-item');
 const detailBody = document.getElementById('detail-body');
 const browseList = document.getElementById('browse-list');
 const searchInput = document.getElementById('browse-search');
+const tagChips = document.querySelectorAll('.tag-chip[data-tag]');
+const clearTagFilter = document.getElementById('clear-tag-filter');
+let activeTags = new Set();
 let currentIdx = -1;
 
 function setHTML(container, html) {
@@ -207,16 +219,76 @@ browseList.addEventListener('keydown', (e) => {
     }
 });
 
-searchInput.addEventListener('input', () => {
+function tagsForItem(item) {
+    return (item.dataset.tags || '').split(',').filter(Boolean);
+}
+
+function itemMatchesActiveTags(item) {
+    if (!activeTags.size) return true;
+    const tags = tagsForItem(item);
+    for (const tag of activeTags) {
+        if (!tags.includes(tag)) return false;
+    }
+    return true;
+}
+
+function applyBrowseFilters() {
     const q = searchInput.value.toLowerCase();
+    const availableTags = new Set();
     items.forEach(item => {
-        const text = item.querySelector('.browse-item-title').textContent.toLowerCase();
-        item.style.display = text.includes(q) ? '' : 'none';
+        const text = item.textContent.toLowerCase();
+        const visible = text.includes(q) && itemMatchesActiveTags(item);
+        item.style.display = visible ? '' : 'none';
+        if (visible || (!activeTags.size && text.includes(q))) {
+            tagsForItem(item).forEach(t => availableTags.add(t));
+        }
+    });
+    document.querySelectorAll('.browse-section').forEach(section => {
+        const children = section.nextElementSibling;
+        const hasVisible = children && Array.from(children.querySelectorAll('.browse-item')).some(
+            item => item.style.display !== 'none'
+        );
+        section.style.display = hasVisible ? '' : 'none';
+    });
+    tagChips.forEach(chip => {
+        const tag = chip.dataset.tag;
+        chip.classList.toggle('active', activeTags.has(tag));
+        chip.classList.toggle('available', activeTags.size > 0 && !activeTags.has(tag) && availableTags.has(tag));
+    });
+    document.querySelectorAll('.tag-label[data-tag]').forEach(label => {
+        label.classList.toggle('active', activeTags.has(label.dataset.tag));
+    });
+    if (clearTagFilter) clearTagFilter.style.display = activeTags.size ? '' : 'none';
+}
+
+function toggleTag(tag) {
+    if (activeTags.has(tag)) activeTags.delete(tag);
+    else activeTags.add(tag);
+    applyBrowseFilters();
+}
+
+tagChips.forEach(chip => {
+    chip.addEventListener('click', () => toggleTag(chip.dataset.tag));
+});
+document.querySelectorAll('.tag-label[data-tag]').forEach(label => {
+    label.addEventListener('click', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleTag(label.dataset.tag);
     });
 });
+if (clearTagFilter) {
+    clearTagFilter.addEventListener('click', () => {
+        activeTags.clear();
+        applyBrowseFilters();
+    });
+}
+
+searchInput.addEventListener('input', applyBrowseFilters);
 searchInput.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { searchInput.value = ''; searchInput.dispatchEvent(new Event('input')); }
 });
+applyBrowseFilters();
 
 // Restore selection from URL or select first
 var params = new URLSearchParams(window.location.search);

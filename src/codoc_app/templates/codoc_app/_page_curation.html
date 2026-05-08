@@ -1,0 +1,27 @@
+{% if page.tags %}
+<div class="page-tags">
+    Tags:
+    {% for tag in page.tags %}<span class="tag-label" data-tag="{{ tag }}">{{ tag }}</span>{% if not forloop.last %} {% endif %}{% endfor %}
+</div>
+{% endif %}
+
+{% if can_manage_page %}
+<div class="page-tools">
+    <form class="page-section-form" onsubmit="return movePageSection(this);" style="display:flex;align-items:center;gap:6px">
+        {% csrf_token %}
+        <span>Move to section</span>
+        <select name="section">
+            {% for sec in sections %}
+            <option value="{{ sec.name }}"{% if sec.id == page.section_id %} selected{% endif %}>{{ sec.title|default:sec.name }}</option>
+            {% endfor %}
+        </select>
+        <button class="btn" type="submit" style="font-size:11px;padding:2px 8px">Move</button>
+    </form>
+    <form class="page-tags-form" onsubmit="return updatePageTags(this);" style="display:flex;align-items:center;gap:6px;flex:1;min-width:240px">
+        {% csrf_token %}
+        <span>Tags</span>
+        <input type="text" name="tags" value="{{ page.tags_csv }}" placeholder="tag1, tag2" style="flex:1;min-width:120px">
+        <button class="btn" type="submit" style="font-size:11px;padding:2px 8px">Save</button>
+    </form>
+</div>
+{% endif %}

@@ -74,6 +74,7 @@ All models use UUID primary keys, JSONField `data` for metadata, and `created_at
 | **Section** | Topical area (e.g., "tracking", "pid") |
 | **Prompt** | User-submitted request, versioned |
 | **Page** | AI-generated content (markdown + rendered HTML), versioned |
+| **PageTag** | Table-backed tags on `Page.group_id`, shared across page versions |
 | **Comment** | Community discussion on pages |
 | **SystemPrompt** | Reusable AI system prompts, versioned |
 
@@ -93,6 +94,25 @@ All models use UUID primary keys, JSONField `data` for metadata, and `created_at
 | **UserProfile** | Theme preference |
 | **SiteContent** | Editable static content (about page) |
 | **JobNotificationSubscription** | HTTPS webhook subscriptions for terminal job notices |
+
+## Page Curation
+
+Generated pages can be curated after creation:
+
+- Page owners and Django staff/superusers can move a page group to another
+  active Section from the result page. The move updates `Page.section` for the
+  page group; it does not rewrite the original `Prompt.section`.
+- Tags are stored in `PageTag`, one row per `(page_group_id, tag_name)`, with a
+  database uniqueness constraint. Tags belong to the page group rather than a
+  single page version, so they survive future page versions.
+- Tags display as plain labels in corun. The tjai `:tag` inline text convention
+  is not used in corun page display.
+- The Documents list renders a tag filter above search. Multiple selected tags
+  are applied as an AND filter.
+
+Curated collections are intentionally not modeled as tags. Tags classify pages;
+future collections should be explicit ordered lists when editorial ordering or
+annotation matters.
 
 ## REST API (Token Authentication)
 
