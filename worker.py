@@ -125,8 +125,36 @@ def _public_url(path):
     return dj_settings.PUBLIC_BASE_URL.rstrip('/') + path
 
 
+def _extract_markdown_title(content):
+    """Return the first Markdown heading as a one-line page title."""
+    for line in (content or '').splitlines():
+        stripped = line.strip()
+        if not stripped.startswith('#'):
+            continue
+        title = stripped.lstrip('#').strip()
+        if title:
+            return title
+    return ''
+
+
+def _result_page_for_job(job, page_group_id):
+    if not page_group_id:
+        return None
+    try:
+        return Page.objects.get(group_id=page_group_id, is_current=True)
+    except Page.DoesNotExist:
+        return None
+
+
 def _job_notification_payload(job):
     page_group_id = job.data.get('result_page_group_id') or job.data.get('result_page_id')
+    page = _result_page_for_job(job, page_group_id)
+    page_title = ''
+    if page:
+        page_title = page.data.get('title') or _extract_markdown_title(page.content)
+    submitted_by = ''
+    if job.prompt_id and job.prompt.submitted_by_id:
+        submitted_by = job.prompt.submitted_by.username
     payload = {
         'job_id': str(job.id),
         'status': job.status,
@@ -136,7 +164,9 @@ def _job_notification_payload(job):
         ),
         'prompt_id': str(job.prompt_id) if job.prompt_id else None,
         'prompt_group_id': str(job.prompt.group_id) if job.prompt_id else None,
+        'submitted_by': submitted_by,
         'result_page_group_id': page_group_id,
+        'result_page_title': page_title,
         'result_page_url': _public_url(f'/page/{page_group_id}/') if page_group_id else None,
         'job_api_url': _public_url(f'/api/v1/jobs/{job.id}/'),
         'error': job.data.get('error'),
@@ -762,6 +792,7 @@ class Worker:
 
             md_converter = md_lib.Markdown(extensions=['fenced_code', 'tables', 'toc'])
             content_html = md_converter.convert(content_md)
+            page_title = _extract_markdown_title(content_md)
 
             group_id = uuid.uuid4()
             page = Page.objects.create(
@@ -775,6 +806,7 @@ class Worker:
                 status='published',
                 data={
                     'format': 'markdown',
+                    'title': page_title,
                     'prompt_content': prompt.content,
                     'prompt_group_id': str(prompt.group_id),
                     'submitted_by': prompt.submitted_by.username if prompt.submitted_by else '',

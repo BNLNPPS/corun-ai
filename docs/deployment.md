@@ -92,8 +92,9 @@ and no redirects; failures are logged and stored in the subscription `data`
 field but do not affect the corun job.
 
 Callback receivers should accept a JSON object with job metadata. Completed jobs
-include `result_page_url`; failed or cancelled jobs include `error` when
-available. See `docs/job-system.md` for the full payload shape.
+include `result_page_title` and `result_page_url`; failed or cancelled jobs
+include `error` when available. See `docs/job-system.md` for the full payload
+shape.
 
 ### Revoking a token
 
