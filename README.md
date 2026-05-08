@@ -102,6 +102,13 @@ Generated pages can be curated after creation:
 - Page owners and Django staff/superusers can move a page group to another
   active Section from the result page. The move updates `Page.section` for the
   page group; it does not rewrite the original `Prompt.section`.
+- Page curation permissions are intentionally narrow: the owner is the user who
+  submitted the source Prompt, and admins are Django users with `is_staff` or
+  `is_superuser`.
+- Curation controls are visible on generated result pages at
+  `/page/<page_group_id>/` and in the Documents right-hand page detail panel.
+  Users who do not have curation permission see the page and its tags but do
+  not see the move/tag edit controls.
 - Tags are stored in `PageTag`, one row per `(page_group_id, tag_name)`, with a
   database uniqueness constraint. Tags belong to the page group rather than a
   single page version, so they survive future page versions.
