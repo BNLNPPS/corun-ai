@@ -37,9 +37,9 @@ The worker is a standalone process managed by supervisord. It is completely inde
 1. **Submit** — Web UI creates `Job(status='queued', definition=..., prompt=...)`
 2. **Pickup** — Worker polls, finds queued job, sets `status='running'`
 3. **Execute** — Worker spawns `claude -p` as a subprocess
-4. **Complete** — Output captured, Page created, `status='completed'`
-5. **Fail** — Error captured in `job.data.error`, `status='failed'`, prompt reverts to `saved`
-6. **Abort** — Web UI sets `status='cancelled'`, worker kills subprocess (SIGTERM)
+4. **Complete** — Output captured, Page created, `status='completed'`, notifications sent
+5. **Fail** — Error captured in `job.data.error`, `status='failed'`, prompt reverts to `saved`, notifications sent
+6. **Abort** — Web UI sets `status='cancelled'`, worker kills subprocess (SIGTERM), notifications sent when the worker observes the terminal state
 
 ## Worker Design
 
@@ -50,6 +50,7 @@ The worker (`manage.py run_worker`) is a single persistent process that:
 3. **Monitors** all running children — checks for completion, timeout, crash
 4. **Handles abort** — checks for `status='cancelled'` and sends SIGTERM
 5. **Logs** all events to both file (stderr, captured by supervisord) and `AppLog`
+6. **Notifies subscribers** — best-effort HTTPS POST on terminal job states
 
 ### Concurrency
 
@@ -82,6 +83,22 @@ Every event is logged to:
 - **AppLog** model → visible in web UI Logs page
 
 Events logged: job pickup, subprocess start, subprocess complete, subprocess fail, abort, timeout.
+
+### Job Notifications
+
+Authenticated API users can create `JobNotificationSubscription` rows with an
+HTTPS callback URL. Every active subscription receives notifications for every
+job that reaches `completed`, `failed`, or `cancelled`; subscriptions are
+broadcast-style rather than owner-scoped.
+
+Notification delivery is best-effort. The worker uses a short timeout, does not
+follow redirects, sends a small fixed JSON payload, and never changes the job
+result because a callback failed. Delivery status is recorded in the
+subscription `data` field (`last_error`, `last_status_code`, `last_notified_at`,
+`last_job_id`) and failures are logged to `AppLog`.
+
+Completed-job payloads include `result_page_url`, e.g.
+`https://epic-devcloud.org/doc/page/<result_page_group_id>/`.
 
 ## JobDefinition
 

@@ -2,9 +2,13 @@
 DRF serializers for the corun-ai REST API.
 """
 
+from urllib.parse import urlparse
+
 from rest_framework import serializers
 
-from corun_app.models import Job, JobDefinition, Page, Prompt, Section
+from corun_app.models import (
+    Job, JobDefinition, JobNotificationSubscription, Page, Prompt, Section,
+)
 
 
 class SectionSerializer(serializers.ModelSerializer):
@@ -85,3 +89,30 @@ class PromptCreateSerializer(serializers.Serializer):
 class JobCreateSerializer(serializers.Serializer):
     prompt_group_id = serializers.UUIDField()
     definition_id = serializers.UUIDField(required=False, allow_null=True)
+
+
+class JobNotificationSubscriptionSerializer(serializers.ModelSerializer):
+    created_by_username = serializers.CharField(source='created_by.username', read_only=True)
+
+    class Meta:
+        model = JobNotificationSubscription
+        fields = [
+            'id', 'name', 'callback_url', 'status', 'created_by',
+            'created_by_username', 'data', 'created_at', 'modified_at',
+        ]
+        read_only_fields = [
+            'id', 'created_by', 'created_by_username', 'created_at', 'modified_at',
+        ]
+
+    def validate_callback_url(self, value):
+        parsed = urlparse(value)
+        if parsed.scheme.lower() != 'https':
+            raise serializers.ValidationError('callback_url must use https.')
+        return value
+
+    def validate_status(self, value):
+        allowed = {'active', 'paused', 'archived'}
+        if value not in allowed:
+            raise serializers.ValidationError(
+                f'status must be one of: {", ".join(sorted(allowed))}.')
+        return value

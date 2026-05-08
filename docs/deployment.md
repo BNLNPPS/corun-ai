@@ -36,7 +36,7 @@ Runs `manage.py run_worker` — polls for queued jobs, executes them.
 cd /home/admin/github/corun-ai
 ./deploy/update_from_dev.sh
 
-# 2. If models changed, run migrations (required on first deploy that includes DRF authtoken support)
+# 2. If models changed, run migrations
 cd /var/www/corun-ai
 .venv/bin/python src/manage.py migrate
 
@@ -73,6 +73,23 @@ cd /var/www/corun-ai
 
 The command prints the token key to stdout. Treat it like a password — store it
 in the MCP server's environment/config, never in source control.
+
+## Job Notification Subscriptions
+
+Machine clients can register HTTPS callbacks for terminal job notifications
+through the REST API. Every active subscription receives every completed,
+failed, or cancelled job notice.
+
+```bash
+curl -X POST https://epic-devcloud.org/doc/api/v1/notification-subscriptions/ \
+  -H "Authorization: Token <key>" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"pandabot","callback_url":"https://pandaserver02.sdcc.bnl.gov/swf-monitor/api/corun-callback/"}'
+```
+
+The callback must use `https://`. Delivery is best-effort with a short timeout
+and no redirects; failures are logged and stored in the subscription `data`
+field but do not affect the corun job.
 
 ### Revoking a token
 

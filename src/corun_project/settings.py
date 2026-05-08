@@ -92,6 +92,7 @@ USE_TZ = True
 
 # Subpath deployment (e.g. /doc on epic-devcloud.org)
 FORCE_SCRIPT_NAME = config('CORUN_FORCE_SCRIPT_NAME', default='') or None
+PUBLIC_BASE_URL = config('CORUN_PUBLIC_BASE_URL', default='https://epic-devcloud.org/doc')
 
 STATIC_URL = config('CORUN_STATIC_URL', default='/static/')
 STATIC_ROOT = BASE_DIR.parent / 'staticfiles'
@@ -146,4 +147,3 @@ LOGGING = {
         },
     },
 }
-

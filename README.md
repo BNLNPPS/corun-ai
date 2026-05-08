@@ -92,6 +92,7 @@ All models use UUID primary keys, JSONField `data` for metadata, and `created_at
 | **AppLog** | Structured application log |
 | **UserProfile** | Theme preference |
 | **SiteContent** | Editable static content (about page) |
+| **JobNotificationSubscription** | HTTPS webhook subscriptions for terminal job notices |
 
 ## REST API (Token Authentication)
 
@@ -124,9 +125,13 @@ cd /var/www/corun-ai
 | GET | `/api/v1/pages/<group_id>/` | Page detail (rendered content, metadata) |
 | GET | `/api/v1/jobs/<job_id>/` | Job status and result_page_group_id |
 | GET | `/api/v1/definitions/` | List active JobDefinitions |
+| GET | `/api/v1/notification-subscriptions/` | List your webhook subscriptions |
 | POST | `/api/v1/prompts/` | Create a new prompt |
 | POST | `/api/v1/jobs/` | Submit a generation job |
 | POST | `/api/v1/jobs/<job_id>/abort/` | Cancel a running/queued job |
+| POST | `/api/v1/notification-subscriptions/` | Create an HTTPS webhook subscription |
+| PATCH | `/api/v1/notification-subscriptions/<id>/` | Update a webhook subscription |
+| DELETE | `/api/v1/notification-subscriptions/<id>/` | Archive a webhook subscription |
 
 ## Job System
 
@@ -143,6 +148,7 @@ The worker is a persistent daemon managed by supervisord. It:
 - Supports concurrent jobs
 - Handles abort (SIGTERM to child process)
 - Logs everything to file and AppLog
+- Sends best-effort HTTPS notifications to active subscriptions when jobs reach `completed`, `failed`, or `cancelled`
 
 ## Deployment
 

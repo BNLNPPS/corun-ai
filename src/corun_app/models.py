@@ -288,6 +288,32 @@ class Job(models.Model):
         return f"Job {self.id} ({self.status})"
 
 
+class JobNotificationSubscription(models.Model):
+    """Webhook subscription for terminal job notifications."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=200)
+    callback_url = models.URLField(max_length=500)
+    status = models.CharField(max_length=50, default='active')
+    # status values: active, paused, archived
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='job_notification_subscriptions')
+    data = models.JSONField(default=dict, blank=True)
+    # data keys: last_error, last_status_code, last_notified_at, last_job_id
+    created_at = models.DateTimeField(auto_now_add=True)
+    modified_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+        indexes = [
+            models.Index(fields=['status', 'name']),
+            models.Index(fields=['created_by', 'status']),
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.status})"
+
+
 class JobStep(models.Model):
     """Individual step within a job. Deterministic execution order."""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

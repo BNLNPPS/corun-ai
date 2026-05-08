@@ -19,6 +19,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import urlparse
 import uuid
 
 # Django ORM setup — must happen before importing models
@@ -35,7 +36,7 @@ from django.utils import timezone
 
 from corun_app.models import (
     AppLog, DEEPSEEK_MODELS, GEMINI_MODELS, REMOTE_MODELS,
-    Job, JobDefinition, Page, Prompt, SystemPrompt,
+    Job, JobDefinition, JobNotificationSubscription, Page, Prompt, SystemPrompt,
 )
 
 logger = logging.getLogger('corun.worker')
@@ -96,6 +97,14 @@ def _tjai_request(method, path, body=None, timeout=15):
         raise RuntimeError(f'tjai {method} {path} connection error: {e.reason}') from e
 
 
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_NO_REDIRECT_OPENER = urllib.request.build_opener(_NoRedirectHandler)
+
+
 def _log(level, message, **kwargs):
     """Log to stderr (supervisord captures) and AppLog."""
     getattr(logger, level)(message)
@@ -110,6 +119,103 @@ def _log(level, message, **kwargs):
         )
     except Exception:
         pass  # DB might be down — stderr is the fallback
+
+
+def _public_url(path):
+    return dj_settings.PUBLIC_BASE_URL.rstrip('/') + path
+
+
+def _job_notification_payload(job):
+    page_group_id = job.data.get('result_page_group_id') or job.data.get('result_page_id')
+    payload = {
+        'job_id': str(job.id),
+        'status': job.status,
+        'definition_id': str(job.definition_id),
+        'definition_name': job.data.get('definition_name') or (
+            job.definition.name if job.definition_id else ''
+        ),
+        'prompt_id': str(job.prompt_id) if job.prompt_id else None,
+        'prompt_group_id': str(job.prompt.group_id) if job.prompt_id else None,
+        'result_page_group_id': page_group_id,
+        'result_page_url': _public_url(f'/page/{page_group_id}/') if page_group_id else None,
+        'job_api_url': _public_url(f'/api/v1/jobs/{job.id}/'),
+        'error': job.data.get('error'),
+        'timing': job.data.get('timing'),
+        'created_at': job.created_at.isoformat(),
+        'modified_at': job.modified_at.isoformat(),
+    }
+    return {k: v for k, v in payload.items() if v is not None}
+
+
+def _post_job_notifications(job):
+    """Best-effort terminal-job webhooks. Notification failures never fail jobs."""
+    try:
+        if job.status not in {'completed', 'failed', 'cancelled'}:
+            return
+
+        subscriptions = list(JobNotificationSubscription.objects.filter(status='active'))
+        if not subscriptions:
+            return
+
+        payload = _job_notification_payload(job)
+        data = json.dumps(payload).encode('utf-8')
+        if len(data) > 8192:
+            _log('warning', f'Job {job.id} notification payload too large; skipping',
+                 job_id=job.id, payload_bytes=len(data))
+            return
+
+        for subscription in subscriptions:
+            callback_url = subscription.callback_url
+            parsed = urlparse(callback_url)
+            if parsed.scheme.lower() != 'https':
+                _record_notification_failure(
+                    subscription, job, 'callback_url must use https', None)
+                continue
+
+            req = urllib.request.Request(
+                callback_url,
+                data=data,
+                method='POST',
+                headers={
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'corun-ai-job-notifier/1.0',
+                },
+            )
+            try:
+                with _NO_REDIRECT_OPENER.open(req, timeout=5) as resp:
+                    status_code = resp.getcode()
+                    subscription.data = {
+                        **subscription.data,
+                        'last_error': '',
+                        'last_status_code': status_code,
+                        'last_notified_at': timezone.now().isoformat(),
+                        'last_job_id': str(job.id),
+                    }
+                    subscription.save(update_fields=['data', 'modified_at'])
+            except urllib.error.HTTPError as e:
+                _record_notification_failure(subscription, job, f'HTTP {e.code}', e.code)
+            except Exception as e:
+                _record_notification_failure(subscription, job, str(e), None)
+    except Exception as e:
+        _log('warning', f'Job {job.id} notification dispatch failed: {e}',
+             job_id=job.id)
+
+
+def _record_notification_failure(subscription, job, error, status_code):
+    subscription.data = {
+        **subscription.data,
+        'last_error': error,
+        'last_status_code': status_code,
+        'last_notified_at': timezone.now().isoformat(),
+        'last_job_id': str(job.id),
+    }
+    try:
+        subscription.save(update_fields=['data', 'modified_at'])
+    except Exception:
+        pass
+    _log('warning',
+         f'Job {job.id} notification to {subscription.name} failed: {error}',
+         job_id=job.id, subscription_id=str(subscription.id))
 
 
 class RunningJob:
@@ -701,6 +807,7 @@ class Worker:
             _log('info',
                  f'Job {rj.job_id} completed in {elapsed:.1f}s — page {page.group_id}',
                  job_id=rj.job_id)
+            _post_job_notifications(job)
 
         except Exception as e:
             _log('error', f'Failed to save results for job {rj.job_id}: {e}',
@@ -731,6 +838,7 @@ class Worker:
             prompt = Prompt.objects.get(id=rj.prompt_id)
             prompt.status = 'saved'
             prompt.save(update_fields=['status', 'modified_at'])
+            _post_job_notifications(job)
         except Exception as e:
             _log('error', f'Failed to update job {rj.job_id} status: {e}',
                  job_id=rj.job_id)

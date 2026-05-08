@@ -5,6 +5,8 @@ from .views import (
     JobCreateView,
     JobDefinitionListView,
     JobDetailView,
+    JobNotificationSubscriptionDetailView,
+    JobNotificationSubscriptionListView,
     PageDetailView,
     PromptCreateView,
     PromptDetailView,
@@ -33,4 +35,16 @@ urlpatterns = [
 
     # JobDefinitions
     path('v1/definitions/', JobDefinitionListView.as_view(), name='definition-list'),
+
+    # Job notification subscriptions
+    path(
+        'v1/notification-subscriptions/',
+        JobNotificationSubscriptionListView.as_view(),
+        name='notification-subscription-list',
+    ),
+    path(
+        'v1/notification-subscriptions/<uuid:subscription_id>/',
+        JobNotificationSubscriptionDetailView.as_view(),
+        name='notification-subscription-detail',
+    ),
 ]

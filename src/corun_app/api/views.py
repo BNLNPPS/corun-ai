@@ -12,11 +12,13 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from corun_app.models import Job, JobDefinition, Page, Prompt, Section
+from corun_app.models import JobNotificationSubscription
 
 from .serializers import (
     JobCreateSerializer,
     JobDefinitionSerializer,
     JobDetailSerializer,
+    JobNotificationSubscriptionSerializer,
     PageDetailSerializer,
     PromptCreateSerializer,
     PromptDetailSerializer,
@@ -186,3 +188,68 @@ class JobDefinitionListView(APIView):
     def get(self, request):
         definitions = JobDefinition.objects.filter(status='active').order_by('name')
         return Response(JobDefinitionSerializer(definitions, many=True).data)
+
+
+# ── Job Notification Subscriptions ───────────────────────────────────────────
+
+class JobNotificationSubscriptionListView(APIView):
+    """GET/POST /api/v1/notification-subscriptions/."""
+
+    def get_queryset(self, request):
+        qs = JobNotificationSubscription.objects.exclude(status='archived')
+        if request.user.is_staff:
+            return qs
+        return qs.filter(created_by=request.user)
+
+    def get(self, request):
+        subscriptions = self.get_queryset(request).order_by('name')
+        return Response(JobNotificationSubscriptionSerializer(subscriptions, many=True).data)
+
+    def post(self, request):
+        ser = JobNotificationSubscriptionSerializer(data=request.data)
+        if not ser.is_valid():
+            return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
+        subscription = ser.save(created_by=request.user)
+        return Response(
+            JobNotificationSubscriptionSerializer(subscription).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class JobNotificationSubscriptionDetailView(APIView):
+    """GET/PATCH/DELETE /api/v1/notification-subscriptions/<subscription_id>/."""
+
+    def get_object(self, request, subscription_id):
+        try:
+            subscription = JobNotificationSubscription.objects.get(id=subscription_id)
+        except JobNotificationSubscription.DoesNotExist:
+            return None
+        if request.user.is_staff or subscription.created_by_id == request.user.id:
+            return subscription
+        return None
+
+    def get(self, request, subscription_id):
+        subscription = self.get_object(request, subscription_id)
+        if subscription is None:
+            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(JobNotificationSubscriptionSerializer(subscription).data)
+
+    def patch(self, request, subscription_id):
+        subscription = self.get_object(request, subscription_id)
+        if subscription is None:
+            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        ser = JobNotificationSubscriptionSerializer(
+            subscription, data=request.data, partial=True)
+        if not ser.is_valid():
+            return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
+        subscription = ser.save()
+        return Response(JobNotificationSubscriptionSerializer(subscription).data)
+
+    def delete(self, request, subscription_id):
+        subscription = self.get_object(request, subscription_id)
+        if subscription is None:
+            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        subscription.status = 'archived'
+        subscription.save(update_fields=['status', 'modified_at'])
+        return Response(status=status.HTTP_204_NO_CONTENT)
