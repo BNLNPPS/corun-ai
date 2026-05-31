@@ -9,6 +9,7 @@ First deployment: code documentation for ePIC at epic-devcloud.org/doc/
 - PostgreSQL, python-decouple for config, same patterns as swf-remote
 - Deployed at `/doc/` on epic-devcloud.org via WSGI subpath
 - Gen3 scheduler: JobDefinition → Job → JobStep (phase-based parallelism)
+- External clients (see README § Clients & integrations): **corun-mcp-server** wraps the REST API for LLM clients; the **swf-monitor pandabot** on swf-testbed subscribes to job-completion callbacks (`/swf-monitor/api/corun-callback/`) and relays them to Mattermost
 
 ## Conventions
 

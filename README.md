@@ -160,6 +160,24 @@ cd /var/www/corun-ai
 | PATCH | `/api/v1/notification-subscriptions/<id>/` | Update a webhook subscription |
 | DELETE | `/api/v1/notification-subscriptions/<id>/` | Archive a webhook subscription |
 
+## Clients & integrations
+
+Two external clients consume the REST API and notification callback above. Their
+internals live in their own repositories; only their relationship to corun-ai is
+recorded here.
+
+- **corun-mcp-server** — [github.com/eic/corun-mcp-server](https://github.com/eic/corun-mcp-server).
+  A standalone MCP server that wraps this REST API so LLM clients can browse
+  sections, submit prompts, trigger generation jobs, and poll results. Tool list
+  and configuration are documented in that repo's README.
+- **swf-monitor PanDA bot** — [github.com/BNLNPPS/swf-monitor](https://github.com/BNLNPPS/swf-monitor).
+  Runs on the `swf-testbed` host at BNL. On startup it registers a
+  `JobNotificationSubscription` pointing at `/swf-monitor/api/corun-callback/`
+  and relays terminal-job notices to the Mattermost `#pandabot` channel; it also
+  launches corun-mcp-server as a stdio child. The callback payload it receives is
+  specified in [docs/job-system.md](docs/job-system.md) § Job Notifications; the
+  bot wiring is documented in `swf-monitor/docs/MCP.md` § PanDA Mattermost Bot.
+
 ## Job System
 
 See [docs/job-system.md](docs/job-system.md) for full details.
