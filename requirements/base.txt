@@ -6,3 +6,4 @@ markdown>=3.7
 beautifulsoup4>=4.12
 anthropic>=0.88
 mcp>=1.27
+starlette>=1.2.1  # security floor: CVE-2026-48710 BadHost; pin at validated version, transitive via mcp/sse-starlette
