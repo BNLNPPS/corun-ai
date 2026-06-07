@@ -66,7 +66,10 @@ wrangle core provides the bounded pool, backpressure, in-flight dedup, and
 graceful drain. Two seams:
 
 - **Bullpen** — the durable store of Probes and their runs.
-- **Bell** — the wake signal; a Hydra event rings the Bell and the run starts.
+- **Bell** — the wake signal. A run is triggered from the web UI, the bot (via
+  MCP), or an inbound REST call (e.g. Hydra signalling that a validation is
+  available for a target). Auto-running a Probe on every inbound trigger is a
+  capability gated by policy — default off, enabled per Probe or per source.
 
 Within a Probe, execution is **scatter / gather**: serial → scatter → gather →
 serial, matching the manifest's collective modes — per-input assessments scatter,
@@ -87,9 +90,16 @@ result.
 
 ## Reporting
 
-Results reach experts through the website, corun's job-completion callbacks and the bot via MCP server.
-The bot targets the reply — channel or DM — using the submitting job id; argus-ai
-records the requestor for accountability and catalog.
+On completion argus-ai notifies outward, and a request may register **one or more**
+completion endpoints — every registered endpoint receives the outcome:
+
+- **Web UI and corun job-completion callbacks** — the in-app surface.
+- **Bot via the MCP server** — targets the reply to a Mattermost channel or DM
+  using the submitting job id.
+- **Caller-specified REST webhooks** — N endpoints a requester (e.g. Hydra, prod
+  tooling) registers per request, each POSTed the outcome.
+
+argus-ai records the requestor for accountability and catalog.
 
 ## Security
 
