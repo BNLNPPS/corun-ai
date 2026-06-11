@@ -84,6 +84,14 @@ MCP_SERVERS = {
         'config': {
             'type': 'http',
             'url': 'https://pandaserver02.sdcc.bnl.gov/swf-monitor/mcp/',
+            # swf-monitor's FastMCP endpoint requires a bearer token; without
+            # it every connect is a 401. Token lives in src/.env (mirror of
+            # ~/.env SWF_MONITOR_MCP_TOKEN). The endpoint also serves its leaf
+            # cert without the InCommon IGTF intermediate — see worker.py's
+            # CA_BUNDLE, which fixes chain verification for both runners.
+            'headers': {
+                'Authorization': 'Bearer ' + config('SWF_MONITOR_MCP_TOKEN', default=''),
+            },
         },
     },
     'xrootd': {

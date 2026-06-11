@@ -89,8 +89,13 @@ class McpClient:
             try:
                 if spec.get('type') == 'http':
                     url = spec['url']
+                    # Pass through any auth headers from .mcp.json (e.g.
+                    # swf-testbed's Authorization: Bearer); without them a
+                    # token-gated endpoint 401s. TLS chain verification for
+                    # such endpoints relies on SSL_CERT_FILE set by worker.py.
                     transport = await self._stack.enter_async_context(
-                        streamablehttp_client(url, timeout=60))
+                        streamablehttp_client(
+                            url, headers=spec.get('headers') or None, timeout=60))
                     # streamable_http yields (read, write, get_session_id)
                     read, write, _get_sid = transport
                 else:

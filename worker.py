@@ -29,6 +29,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 import django
 django.setup()
 
+import certifi
 import markdown as md_lib
 from decouple import config
 from django.conf import settings as dj_settings
@@ -53,6 +54,45 @@ GEMINI_PATHS = (
     else ['/home/admin/.nvm/versions/node/v24.13.1/bin/gemini', '/usr/local/bin/gemini']
 )
 DEFAULT_TIMEOUT = 3600  # 1 hour
+
+
+def _build_ca_bundle():
+    """Return a CA bundle path that includes the InCommon IGTF intermediate.
+
+    swf-monitor (pandaserver02.sdcc.bnl.gov) serves its leaf cert without the
+    'InCommon RSA IGTF Server CA 3' intermediate, so MCP clients can't build
+    the chain to the USERTrust root and TLS verification fails. We concatenate
+    certifi's roots with that intermediate (committed at
+    deploy/certs/InCommonRSAIGTFServerCA3.pem) into one bundle, used for both
+    NODE_EXTRA_CA_CERTS (claude -p, Node) and SSL_CERT_FILE (deepseek_runner,
+    httpx). The bundle is a superset of certifi, so it never breaks any other
+    HTTPS the subprocesses make. Falls back to certifi alone if the write or
+    the intermediate is unavailable.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    intermediate = os.path.join(here, 'deploy', 'certs', 'InCommonRSAIGTFServerCA3.pem')
+    out = os.path.join(here, 'data', 'ca-bundle.pem')
+    try:
+        with open(certifi.where()) as f:
+            roots = f.read()
+        extra = ''
+        if os.path.exists(intermediate):
+            with open(intermediate) as f:
+                extra = f.read()
+        else:
+            logger.warning('CA intermediate missing at %s; swf-testbed TLS will fail', intermediate)
+        os.makedirs(os.path.dirname(out), exist_ok=True)
+        with open(out, 'w') as f:
+            f.write(roots)
+            if extra:
+                f.write('\n' + extra)
+        return out
+    except OSError as e:
+        logger.warning('CA bundle build failed (%s); falling back to certifi', e)
+        return certifi.where()
+
+
+CA_BUNDLE = _build_ca_bundle()
 
 
 def _find_claude():
@@ -540,7 +580,13 @@ class Worker:
             'LANG': 'C.UTF-8',
             'LC_ALL': 'C.UTF-8',
             'TJAI_ACTION_ID': 'codoc-generate',
-            'NODE_EXTRA_CA_CERTS': '/etc/pki/tls/certs/ca-bundle.crt',
+            # CA bundle that includes the InCommon IGTF intermediate (see
+            # _build_ca_bundle): NODE_EXTRA_CA_CERTS for claude -p (Node),
+            # SSL_CERT_FILE for deepseek_runner (httpx). The old hardcoded
+            # RHEL path (/etc/pki/tls/certs/ca-bundle.crt) does not exist on
+            # this Debian host, so it was a silent no-op.
+            'NODE_EXTRA_CA_CERTS': CA_BUNDLE,
+            'SSL_CERT_FILE': CA_BUNDLE,
         }
         # DeepSeek runs need DEEPSEEK_API_KEY in the subprocess env. Read
         # from Django settings (loaded from .env via python-decouple) and

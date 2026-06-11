@@ -45,6 +45,42 @@ cd /var/www/corun-ai
 sudo supervisorctl restart corun-worker
 ```
 
+## Worker configuration & secrets
+
+Supervisord starts the worker with a near-empty environment — only `HOME` and
+`LANG` (see `environment=` in the worker config). Every other setting comes from
+`src/.env`, read by **python-decouple**: `config()` (AutoConfig) walks up from
+`settings.py` (`src/corun_project/`) and loads the first `.env` it finds, which
+is `src/.env`. That file is gitignored (`**/.env`) and excluded from the deploy
+rsync, so it is **prod-local and survives deploys** — there is no `.env` in
+`/var/www/corun-ai/` itself; the operative file is
+`/var/www/corun-ai/src/.env`. To add or change a secret: edit that file in
+place, then `sudo supervisorctl restart corun-worker` (decouple reads it once at
+import). The process environment is not the source of truth — `ps`/`/proc`
+will show only `HOME`/`LANG`.
+
+### swf-testbed MCP access (token + TLS chain)
+
+The `swf-testbed` entry in `MCP_SERVERS` (`src/corun_app/models.py`) is an HTTP
+MCP server at `https://pandaserver02.sdcc.bnl.gov/swf-monitor/mcp/`. Two things
+are required for any job to reach it; without either, every connect fails:
+
+- **Bearer token.** The endpoint's FastMCP app requires `Authorization: Bearer
+  <token>` — no token returns `401 Authorization required`. The token is
+  `SWF_MONITOR_MCP_TOKEN` in `src/.env` (a mirror of the host's
+  `~/.env SWF_MONITOR_MCP_TOKEN`); the config injects it as a `headers` entry,
+  which the claude `-p` runner passes via `.mcp.json` and `deepseek_runner`
+  passes to `streamablehttp_client`.
+- **TLS intermediate.** The server presents only its leaf cert (issued by
+  *InCommon RSA IGTF Server CA 3*), omitting that intermediate, so clients
+  cannot build the chain to the USERTrust root and verification fails with
+  "unable to get local issuer certificate." `worker.py:_build_ca_bundle()`
+  concatenates certifi's roots with the committed intermediate
+  (`deploy/certs/InCommonRSAIGTFServerCA3.pem`) into `data/ca-bundle.pem` and
+  points both `NODE_EXTRA_CA_CERTS` (claude `-p`, Node) and `SSL_CERT_FILE`
+  (`deepseek_runner`, httpx) at it. The bundle is a superset of certifi, so it
+  is safe for all other HTTPS the subprocesses make.
+
 ## API Token Management
 
 API tokens allow machine clients (e.g. MCP servers) to authenticate with corun-ai
