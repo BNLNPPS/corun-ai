@@ -666,7 +666,8 @@ def page_detail(request, group_id):
 
 def queue(request):
     """Job queue: running and completed jobs."""
-    jobs = Job.objects.exclude(data__queue_hidden=True).select_related(
+    visible_jobs = Q(data__queue_hidden=False) | Q(data__queue_hidden__isnull=True)
+    jobs = Job.objects.filter(visible_jobs).select_related(
         'definition', 'prompt',
     ).order_by('-created_at')[:100]
     active = [j for j in jobs if j.status in ('queued', 'running')]
@@ -682,7 +683,8 @@ def queue_status_api(request):
     from django.db.models import Count
     from django.utils import timezone as tz
 
-    jobs = list(Job.objects.exclude(data__queue_hidden=True).select_related(
+    visible_jobs = Q(data__queue_hidden=False) | Q(data__queue_hidden__isnull=True)
+    jobs = list(Job.objects.filter(visible_jobs).select_related(
         'definition', 'prompt__submitted_by', 'triggered_by',
     ).order_by('-created_at')[:50])
 
