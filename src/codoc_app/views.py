@@ -981,7 +981,11 @@ def definition_fragment(request, pk):
             f'→ remote Mac ollama ({model})'
         )
     elif model in GEMINI_MODELS:
-        d.data['cli_preview'] = f'gemini -m {model} --yolo -p "<prompt>"'
+        from codoc_app.antigravity_runner import antigravity_model_name
+        d.data['cli_preview'] = (
+            f'agy --sandbox --dangerously-skip-permissions '
+            f'--model "{antigravity_model_name(model)}" --print "<prompt>"'
+        )
     elif model in DEEPSEEK_MODELS:
         d.data['cli_preview'] = (
             f'deepseek_runner.py --model {model} '

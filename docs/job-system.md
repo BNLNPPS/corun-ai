@@ -75,7 +75,8 @@ The model stored in `JobDefinition.data.model` selects the execution branch:
   -m <model> -o codex-output.md -`, with combined system and user
   instructions on stdin. The worker reads `codex-output.md` for page content
   because Codex writes run status text to stdout.
-- Gemini models run through the Gemini CLI.
+- Gemini models run through Antigravity CLI (`agy --print`) because consumer
+  Google AI Pro/Ultra access no longer works through Gemini CLI login.
 - DeepSeek models run through `codoc_app/deepseek_runner.py`.
 - Remote Gemma and Qwen models are dispatched to tjai.
 

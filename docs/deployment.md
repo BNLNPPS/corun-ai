@@ -88,7 +88,7 @@ The worker finds local CLIs from `src/.env` when explicit paths are set:
 ```bash
 CORUN_CLAUDE_PATH=/home/admin/.local/bin/claude
 CORUN_CODEX_PATH=/home/admin/.nvm/versions/node/v24.13.1/bin/codex
-CORUN_GEMINI_PATH=/home/admin/.nvm/versions/node/v24.13.1/bin/gemini
+CORUN_ANTIGRAVITY_PATH=/home/admin/.local/bin/agy
 ```
 
 If a variable is unset, the worker falls back to the default paths in

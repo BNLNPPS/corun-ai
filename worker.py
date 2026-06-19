@@ -35,6 +35,7 @@ from decouple import config
 from django.conf import settings as dj_settings
 from django.utils import timezone
 
+from codoc_app.antigravity_runner import build_antigravity_command
 from codoc_app.codex_runner import build_codex_command
 from corun_app.models import (
     AppLog, CODEX_MODELS, DEEPSEEK_MODELS, GEMINI_MODELS, REMOTE_MODELS,
@@ -45,7 +46,7 @@ logger = logging.getLogger('corun.worker')
 
 _claude_path_env = config('CORUN_CLAUDE_PATH', default='')
 _codex_path_env = config('CORUN_CODEX_PATH', default='')
-_gemini_path_env = config('CORUN_GEMINI_PATH', default='')
+_antigravity_path_env = config('CORUN_ANTIGRAVITY_PATH', default='')
 
 CLAUDE_PATHS = (
     [_claude_path_env] if _claude_path_env
@@ -55,9 +56,9 @@ CODEX_PATHS = (
     [_codex_path_env] if _codex_path_env
     else ['/home/admin/.nvm/versions/node/v24.13.1/bin/codex', '/usr/local/bin/codex']
 )
-GEMINI_PATHS = (
-    [_gemini_path_env] if _gemini_path_env
-    else ['/home/admin/.nvm/versions/node/v24.13.1/bin/gemini', '/usr/local/bin/gemini']
+ANTIGRAVITY_PATHS = (
+    [_antigravity_path_env] if _antigravity_path_env
+    else ['/home/admin/.local/bin/agy', '/usr/local/bin/agy']
 )
 DEFAULT_TIMEOUT = 3600  # 1 hour
 
@@ -115,11 +116,11 @@ def _find_codex():
     raise RuntimeError("codex CLI not found at: " + ", ".join(CODEX_PATHS))
 
 
-def _find_gemini():
-    for p in GEMINI_PATHS:
+def _find_antigravity():
+    for p in ANTIGRAVITY_PATHS:
         if os.path.isfile(p) and os.access(p, os.X_OK):
             return p
-    raise RuntimeError("gemini CLI not found at: " + ", ".join(GEMINI_PATHS))
+    raise RuntimeError("Antigravity CLI not found at: " + ", ".join(ANTIGRAVITY_PATHS))
 
 
 def _tjai_request(method, path, body=None, timeout=15):
@@ -544,19 +545,18 @@ class Worker:
             )
             stdin_content = combined
         elif model in GEMINI_MODELS:
-            gemini_path = _find_gemini()
+            antigravity_path = _find_antigravity()
             combined = (
                 f"SYSTEM INSTRUCTIONS (follow these for all responses):\n"
                 f"{system_prompt.content}\n\n"
                 f"USER REQUEST:\n{prompt.content}"
             )
-            cmd = [
-                gemini_path,
-                '-m', model,
-                '--yolo',
-                '-o', 'text',
-                '-p', combined,
-            ]
+            cmd = build_antigravity_command(
+                antigravity_path,
+                model,
+                combined,
+                timeout_s=timeout,
+            )
             use_gemini = True
         elif model in DEEPSEEK_MODELS:
             # DeepSeek V4 via Anthropic-compat endpoint — no CLI exists,
@@ -564,7 +564,7 @@ class Worker:
             # writes plain text to stdout. The worker reads stdout the
             # same way it does for claude -p (no use_gemini flag).
             # MCP tools are not wired in for DeepSeek (text-only), same
-            # situation as the gemini-cli branch.
+            # situation as the Antigravity branch.
             runner = '/var/www/corun-ai/.venv/bin/python'
             runner_script = '/var/www/corun-ai/src/codoc_app/deepseek_runner.py'
             cmd = [

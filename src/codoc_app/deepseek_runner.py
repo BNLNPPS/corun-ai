@@ -5,7 +5,7 @@ Spawned by worker.py for jobs whose JobDefinition.model is in
 DEEPSEEK_MODELS. Reads the user prompt from stdin, runs an Anthropic
 tool-use agent loop against DeepSeek's Anthropic-compat endpoint
 (https://api.deepseek.com/anthropic), and writes the final text response
-to stdout. Mirrors the contract of the claude -p and gemini-CLI branches
+to stdout. Mirrors the contract of the claude -p and Antigravity branches
 (stdout = result text, non-zero exit = failure).
 
 MCP tool support: reads job_dir/.mcp.json (the same file the claude -p

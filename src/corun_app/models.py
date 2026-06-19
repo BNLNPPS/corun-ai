@@ -22,8 +22,11 @@ MODEL_CHOICES = [
     ('claude-sonnet-4-6', 'Sonnet 4.6 (pinned)', 'Claude'),
     ('haiku', 'Haiku (latest)', 'Claude'),
     ('claude-haiku-4-5', 'Haiku 4.5 (pinned)', 'Claude'),
-    ('gemini-2.5-flash', 'Gemini 2.5 Flash', 'Gemini'),
-    ('gemini-2.5-pro', 'Gemini 2.5 Pro', 'Gemini'),
+    ('gemini-3.5-flash-low', 'Gemini 3.5 Flash (Low)', 'Gemini'),
+    ('gemini-3.5-flash-medium', 'Gemini 3.5 Flash (Medium)', 'Gemini'),
+    ('gemini-3.5-flash-high', 'Gemini 3.5 Flash (High)', 'Gemini'),
+    ('gemini-3.1-pro-low', 'Gemini 3.1 Pro (Low)', 'Gemini'),
+    ('gemini-3.1-pro-high', 'Gemini 3.1 Pro (High)', 'Gemini'),
     ('deepseek-v4-flash', 'DeepSeek V4 Flash', 'DeepSeek'),
     ('deepseek-v4-pro', 'DeepSeek V4 Pro', 'DeepSeek'),
     ('gpt-5.5', 'Codex ChatGPT 5.5', 'Codex'),
@@ -32,7 +35,8 @@ MODEL_CHOICES = [
     ('qwen', 'qwen', 'Qwen'),
 ]
 
-GEMINI_MODELS = {m[0] for m in MODEL_CHOICES if m[2] == 'Gemini'}
+GEMINI_LEGACY_ALIASES = {'gemini-2.5-flash', 'gemini-2.5-pro'}
+GEMINI_MODELS = {m[0] for m in MODEL_CHOICES if m[2] == 'Gemini'} | GEMINI_LEGACY_ALIASES
 DEEPSEEK_MODELS = {m[0] for m in MODEL_CHOICES if m[2] == 'DeepSeek'}
 CODEX_MODELS = {m[0] for m in MODEL_CHOICES if m[2] == 'Codex'}
 GEMMA_MODELS = {m[0] for m in MODEL_CHOICES if m[2] == 'Gemma'}
