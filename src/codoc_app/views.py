@@ -666,7 +666,9 @@ def page_detail(request, group_id):
 
 def queue(request):
     """Job queue: running and completed jobs."""
-    jobs = Job.objects.select_related('definition', 'prompt').order_by('-created_at')[:100]
+    jobs = Job.objects.exclude(data__queue_hidden=True).select_related(
+        'definition', 'prompt',
+    ).order_by('-created_at')[:100]
     active = [j for j in jobs if j.status in ('queued', 'running')]
     completed = [j for j in jobs if j.status in ('completed', 'failed', 'cancelled')]
     return render(request, 'codoc_app/queue.html', {
@@ -680,7 +682,7 @@ def queue_status_api(request):
     from django.db.models import Count
     from django.utils import timezone as tz
 
-    jobs = list(Job.objects.select_related(
+    jobs = list(Job.objects.exclude(data__queue_hidden=True).select_related(
         'definition', 'prompt__submitted_by', 'triggered_by',
     ).order_by('-created_at')[:50])
 
@@ -866,11 +868,36 @@ def job_rerun(request, pk):
 @require_POST
 @login_required
 def job_delete(request, pk):
-    """Delete a completed/failed/cancelled job."""
+    """Hide a completed/failed/cancelled job from the queue.
+
+    Keep the Job row for audit/provenance; the queue UI treats this endpoint
+    as a history cleanup action, not a destructive database delete.
+    """
     job = get_object_or_404(Job, id=pk)
     if job.status in ('queued', 'running'):
         return JsonResponse({'error': 'Abort the job first.'}, status=400)
-    job.delete()
+    now = datetime.now(timezone.utc).isoformat()
+    job.data = {
+        **job.data,
+        'queue_hidden': True,
+        'queue_hidden_at': now,
+        'queue_hidden_by': request.user.username,
+        'queue_hidden_by_id': str(request.user.id),
+    }
+    job.save(update_fields=['data', 'modified_at'])
+    AppLog.objects.create(
+        source='codoc.queue',
+        timestamp=datetime.now(timezone.utc),
+        level=logging.INFO,
+        levelname='INFO',
+        message=f'Job {job.id} hidden from queue by {request.user.username}',
+        extra_data={
+            'job_id': str(job.id),
+            'status': job.status,
+            'hidden_by': request.user.username,
+            'hidden_by_id': str(request.user.id),
+        },
+    )
     return JsonResponse({'ok': True})
 
 

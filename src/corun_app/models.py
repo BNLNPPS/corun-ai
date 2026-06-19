@@ -18,6 +18,7 @@ from django.conf import settings
 MODEL_CHOICES = [
     ('opus', 'Opus (latest)', 'Claude'),
     ('claude-opus-4-7', 'Opus 4.7 (pinned)', 'Claude'),
+    ('claude-opus-4-8', 'Opus 4.8 (pinned)', 'Claude'),
     ('sonnet', 'Sonnet (latest)', 'Claude'),
     ('claude-sonnet-4-6', 'Sonnet 4.6 (pinned)', 'Claude'),
     ('haiku', 'Haiku (latest)', 'Claude'),

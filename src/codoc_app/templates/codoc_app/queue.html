@@ -27,7 +27,7 @@ th.sort-desc::after { content: ' ▼'; font-size: 10px; }
 const PAGE_URL = '{% url "codoc:page" "00000000-0000-0000-0000-000000000000" %}';
 const ABORT_URL = '{% url "codoc:job_abort" "00000000-0000-0000-0000-000000000000" %}';
 const PREPARE_URL = '{% url "codoc:prepare" %}';
-const DELETE_URL = '{% url "codoc:job_delete" "00000000-0000-0000-0000-000000000000" %}';
+const HIDE_URL = '{% url "codoc:job_delete" "00000000-0000-0000-0000-000000000000" %}';
 const CSRF = '{{ csrf_token }}';
 
 function formatBytes(b) {
@@ -207,7 +207,7 @@ function renderQueue(data) {
                 '<td>' + result + '</td>' +
                 '<td>' +
                     '<a class="btn" style="background:#14532d;font-size:11px;padding:2px 8px;margin-right:16px;text-decoration:none;display:inline-block" href="' + PREPARE_URL + '?source_job=' + encodeURIComponent(j.id) + '" title="Open the setup panel pre-filled from this job">Rerun</a>' +
-                    '<span style="color:#c44;cursor:pointer;font-size:16px" onclick="deleteJob(\'' + jobId + '\')" title="Delete">✕</span>' +
+                    '<span style="color:#c44;cursor:pointer;font-size:16px" onclick="hideJob(\'' + jobId + '\')" title="Hide from queue">✕</span>' +
                 '</td></tr>';
         });
         chtml += '</tbody></table>';
@@ -250,8 +250,8 @@ function abortJob(id) {
     }).then(r => r.json()).then(() => pollQueue());
 }
 
-function deleteJob(id) {
-    fetch(DELETE_URL.replace('00000000-0000-0000-0000-000000000000', id), {
+function hideJob(id) {
+    fetch(HIDE_URL.replace('00000000-0000-0000-0000-000000000000', id), {
         method: 'POST', headers: {'X-CSRFToken': CSRF},
     }).then(r => r.json()).then(() => pollQueue());
 }
