@@ -26,6 +26,7 @@ MODEL_CHOICES = [
     ('gemini-2.5-pro', 'Gemini 2.5 Pro', 'Gemini'),
     ('deepseek-v4-flash', 'DeepSeek V4 Flash', 'DeepSeek'),
     ('deepseek-v4-pro', 'DeepSeek V4 Pro', 'DeepSeek'),
+    ('gpt-5.5', 'Codex ChatGPT 5.5', 'Codex'),
     ('gemma4', 'gemma4', 'Gemma'),
     ('gemma4-fast', 'gemma4-fast', 'Gemma'),
     ('qwen', 'qwen', 'Qwen'),
@@ -33,6 +34,7 @@ MODEL_CHOICES = [
 
 GEMINI_MODELS = {m[0] for m in MODEL_CHOICES if m[2] == 'Gemini'}
 DEEPSEEK_MODELS = {m[0] for m in MODEL_CHOICES if m[2] == 'DeepSeek'}
+CODEX_MODELS = {m[0] for m in MODEL_CHOICES if m[2] == 'Codex'}
 GEMMA_MODELS = {m[0] for m in MODEL_CHOICES if m[2] == 'Gemma'}
 QWEN_MODELS = {m[0] for m in MODEL_CHOICES if m[2] == 'Qwen'}
 

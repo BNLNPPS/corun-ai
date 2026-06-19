@@ -957,7 +957,7 @@ def definition_fragment(request, pk):
         sp = SystemPrompt.objects.filter(group_id=sp_gid, is_current=True).first()
     sysprompts = SystemPrompt.objects.filter(is_current=True)
     from corun_app.models import (
-        DEEPSEEK_MODELS, GEMINI_MODELS, REMOTE_MODELS,
+        CODEX_MODELS, DEEPSEEK_MODELS, GEMINI_MODELS, REMOTE_MODELS,
         MCP_SERVERS, REMOTE_EXTRA_MCP_LABELS,
     )
     # Resolve MCP tool keys to labels. Look in MCP_SERVERS first (local-
@@ -986,6 +986,13 @@ def definition_fragment(request, pk):
         d.data['cli_preview'] = (
             f'deepseek_runner.py --model {model} '
             f'(Anthropic-compat endpoint, text-only, no MCP tools)'
+        )
+    elif model in CODEX_MODELS:
+        mcp_part = ' -c mcp_servers... overrides' if d.data.get('mcp_tools') else ''
+        d.data['cli_preview'] = (
+            f'codex exec --ephemeral --ignore-user-config'
+            f' --sandbox read-only -c approval_policy="never"'
+            f' --skip-git-repo-check -m {model} -o codex-output.md{mcp_part} -'
         )
     else:
         mcp_part = ' --mcp-config .mcp.json --allowedTools "mcp__*"' if d.data.get('mcp_tools') else ''

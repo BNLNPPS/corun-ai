@@ -15,8 +15,8 @@ Collaborative AI Runner — a harness for AI workflows. Humans provide input and
 │  │  (Django app) │────▶│  (supervisor) │────▶│  (all state)   │  │
 │  │              │     │              │     │                │  │
 │  │  - Web UI     │     │  - Polls DB   │     │  - Jobs        │  │
-│  │  - REST API   │     │  - Spawns     │     │  - Prompts     │  │
-│  │  - Submit jobs│     │    claude -p  │     │  - Pages       │  │
+│  │  - REST API   │     │  - Spawns AI  │     │  - Prompts     │  │
+│  │  - Submit jobs│     │    CLIs/APIs  │     │  - Pages       │  │
 │  │              │     │  - Monitors   │     │  - Definitions  │  │
 │  └──────────────┘     │    processes  │     │  - SysPrompts  │  │
 │                        │  - Logs       │     │  - Logs        │  │
@@ -29,7 +29,9 @@ Collaborative AI Runner — a harness for AI workflows. Humans provide input and
 ## Stack
 
 - **Framework:** Django 5.2, PostgreSQL
-- **AI execution:** `claude -p` CLI with MCP tools (LXR code browser, GitHub)
+- **AI execution:** worker-spawned AI CLIs/APIs. Claude uses `claude -p`;
+  Codex uses `codex exec`; Gemini uses the Gemini CLI; DeepSeek uses the
+  Anthropic-compatible API wrapper. Selected MCP tools are passed per job.
 - **Process management:** supervisord
 - **Web server:** Apache mod_wsgi, subpath at `/doc/`
 - **Config:** python-decouple, env prefix `CORUN_`
@@ -43,13 +45,11 @@ corun-ai/
 │   ├── corun_app/            # Core: models, migrations
 │   ├── codoc_app/            # Code documentation app: views, templates, generation
 │   │   ├── views.py          # Web views + API endpoints
-│   │   ├── generate.py       # Generation logic (claude -p invocation)
-│   │   ├── management/
-│   │   │   └── commands/
-│   │   │       └── run_worker.py  # Job worker daemon
+│   │   ├── generate.py       # Job submission logic
 │   │   └── templates/codoc_app/   # All HTML templates
 │   ├── templates/            # Auth templates (login, etc.)
 │   └── manage.py
+├── worker.py                 # Job worker daemon
 ├── deploy/
 │   ├── update_from_dev.sh    # Deploy script (rsync + collectstatic + reload)
 │   ├── supervisor/           # supervisord config files
@@ -182,7 +182,7 @@ recorded here.
 
 See [docs/job-system.md](docs/job-system.md) for full details.
 
-**Flow:** User submits prompt → Job row created (status=queued) → Worker picks it up → Spawns `claude -p` subprocess → Captures output → Creates Page → Updates Job status
+**Flow:** User submits prompt → Job row created (status=queued) → Worker picks it up → Spawns the selected AI runner → Captures output → Creates Page → Updates Job status
 
 **Job statuses:** queued → running → completed | failed | cancelled
 
@@ -203,7 +203,7 @@ See [docs/deployment.md](docs/deployment.md) for operations guide.
 # Deploy code changes (safe — does not affect running jobs)
 ./deploy/update_from_dev.sh
 
-# Restart job worker (will wait for running jobs to finish)
+# Restart job worker
 sudo supervisorctl restart corun-worker
 ```
 
@@ -214,7 +214,7 @@ sudo supervisorctl restart corun-worker
 cd src && python manage.py runserver
 
 # Run worker locally
-cd src && python manage.py run_worker
+python worker.py
 
 # Migrations
 cd src && python manage.py makemigrations && python manage.py migrate

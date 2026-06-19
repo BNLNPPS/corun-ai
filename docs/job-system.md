@@ -12,9 +12,9 @@ Web App (WSGI)          Database            Worker (supervisord)
      │                     │◀── poll every 1s ─────│
      │                     │                       │
      │                     │   UPDATE status=running
-     │                     │   spawn claude -p ────│
+     │                     │   spawn AI runner ────│
      │                     │                       │
-     │                     │   ... claude runs ... │
+     │                     │   ... runner runs ... │
      │                     │                       │
      │                     │   INSERT Page          │
      │                     │   UPDATE status=done ──│
@@ -36,14 +36,14 @@ The worker is a standalone process managed by supervisord. It is completely inde
 
 1. **Submit** — Web UI creates `Job(status='queued', definition=..., prompt=...)`
 2. **Pickup** — Worker polls, finds queued job, sets `status='running'`
-3. **Execute** — Worker spawns `claude -p` as a subprocess
+3. **Execute** — Worker spawns the selected AI runner or dispatches the job to tjai
 4. **Complete** — Output captured, Page created, `status='completed'`, notifications sent
 5. **Fail** — Error captured in `job.data.error`, `status='failed'`, prompt reverts to `saved`, notifications sent
 6. **Abort** — Web UI sets `status='cancelled'`, worker kills subprocess (SIGTERM), notifications sent when the worker observes the terminal state
 
 ## Worker Design
 
-The worker (`manage.py run_worker`) is a single persistent process that:
+The worker (`worker.py`) is a single persistent process that:
 
 1. **Polls** the database every second for `Job.status='queued'`
 2. **Spawns** each job as a child subprocess via `subprocess.Popen`
@@ -64,10 +64,30 @@ while True:
     # Sleep 1 second
 ```
 
+### Runner Selection
+
+The model stored in `JobDefinition.data.model` selects the execution branch:
+
+- Claude models run through `claude -p` with the system prompt passed as a CLI
+  argument and the user prompt on stdin.
+- Codex models run through `codex exec --ephemeral --ignore-user-config
+  --sandbox read-only -c approval_policy="never" --skip-git-repo-check
+  -m <model> -o codex-output.md -`, with combined system and user
+  instructions on stdin. The worker reads `codex-output.md` for page content
+  because Codex writes run status text to stdout.
+- Gemini models run through the Gemini CLI.
+- DeepSeek models run through `codoc_app/deepseek_runner.py`.
+- Remote Gemma and Qwen models are dispatched to tjai.
+
+Selected local MCP servers are materialized per job from `MCP_SERVERS`.
+Claude receives a job-local `.mcp.json`. Codex receives equivalent
+`-c mcp_servers...` overrides so it does not load the user's full Codex
+configuration.
+
 ### Subprocess Environment
 
-Each `claude -p` subprocess runs with:
-- `HOME=/home/admin` — claude needs config from admin's home
+Each local subprocess runs with:
+- `HOME=/home/admin` by default, configurable with `CORUN_WORKER_HOME`
 - `PYTHONIOENCODING=utf-8`, `LANG=C.UTF-8` — unicode safety
 - `TJAI_ACTION_ID=codoc-generate` — prevents dialog recording
 - No `CLAUDECODE`, no `ANTHROPIC_API_KEY` — forces subscription auth

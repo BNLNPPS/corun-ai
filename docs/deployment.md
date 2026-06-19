@@ -21,7 +21,7 @@ Serves the Django web UI at `/doc/`. WSGI subpath deployment via `wsgi_subpath.p
 
 ### Job Worker (supervisord)
 
-Runs `manage.py run_worker` — polls for queued jobs, executes them.
+Runs `/var/www/corun-ai/worker.py` and polls for queued jobs.
 
 - Config: `/etc/supervisor/conf.d/corun-worker.conf`
 - Logs: `/var/log/corun-ai/worker.log` (stdout+stderr via supervisord)
@@ -69,17 +69,30 @@ are required for any job to reach it; without either, every connect fails:
   <token>` — no token returns `401 Authorization required`. The token is
   `SWF_MONITOR_MCP_TOKEN` in `src/.env` (a mirror of the host's
   `~/.env SWF_MONITOR_MCP_TOKEN`); the config injects it as a `headers` entry,
-  which the claude `-p` runner passes via `.mcp.json` and `deepseek_runner`
-  passes to `streamablehttp_client`.
+  which the Claude and Codex runners pass to their CLI MCP configuration and
+  `deepseek_runner` passes to `streamablehttp_client`.
 - **TLS intermediate.** The server presents only its leaf cert (issued by
   *InCommon RSA IGTF Server CA 3*), omitting that intermediate, so clients
   cannot build the chain to the USERTrust root and verification fails with
   "unable to get local issuer certificate." `worker.py:_build_ca_bundle()`
   concatenates certifi's roots with the committed intermediate
   (`deploy/certs/InCommonRSAIGTFServerCA3.pem`) into `data/ca-bundle.pem` and
-  points both `NODE_EXTRA_CA_CERTS` (claude `-p`, Node) and `SSL_CERT_FILE`
+  points both `NODE_EXTRA_CA_CERTS` (Node-based CLIs) and `SSL_CERT_FILE`
   (`deepseek_runner`, httpx) at it. The bundle is a superset of certifi, so it
   is safe for all other HTTPS the subprocesses make.
+
+### AI runner paths
+
+The worker finds local CLIs from `src/.env` when explicit paths are set:
+
+```bash
+CORUN_CLAUDE_PATH=/home/admin/.local/bin/claude
+CORUN_CODEX_PATH=/home/admin/.nvm/versions/node/v24.13.1/bin/codex
+CORUN_GEMINI_PATH=/home/admin/.nvm/versions/node/v24.13.1/bin/gemini
+```
+
+If a variable is unset, the worker falls back to the default paths in
+`worker.py`. Restart `corun-worker` after changing runner paths.
 
 ## API Token Management
 
@@ -167,8 +180,8 @@ File: `/etc/supervisor/conf.d/corun-worker.conf`
 
 ```ini
 [program:corun-worker]
-command=/var/www/corun-ai/.venv/bin/python /var/www/corun-ai/src/manage.py run_worker
-directory=/var/www/corun-ai/src
+command=/var/www/corun-ai/.venv/bin/python /var/www/corun-ai/worker.py --max-concurrent 2
+directory=/var/www/corun-ai
 user=admin
 autostart=true
 autorestart=true

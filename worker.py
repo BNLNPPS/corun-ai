@@ -35,19 +35,25 @@ from decouple import config
 from django.conf import settings as dj_settings
 from django.utils import timezone
 
+from codoc_app.codex_runner import build_codex_command
 from corun_app.models import (
-    AppLog, DEEPSEEK_MODELS, GEMINI_MODELS, REMOTE_MODELS,
+    AppLog, CODEX_MODELS, DEEPSEEK_MODELS, GEMINI_MODELS, REMOTE_MODELS,
     Job, JobDefinition, JobNotificationSubscription, Page, Prompt, SystemPrompt,
 )
 
 logger = logging.getLogger('corun.worker')
 
 _claude_path_env = config('CORUN_CLAUDE_PATH', default='')
+_codex_path_env = config('CORUN_CODEX_PATH', default='')
 _gemini_path_env = config('CORUN_GEMINI_PATH', default='')
 
 CLAUDE_PATHS = (
     [_claude_path_env] if _claude_path_env
     else ['/home/admin/.local/bin/claude', '/usr/local/bin/claude']
+)
+CODEX_PATHS = (
+    [_codex_path_env] if _codex_path_env
+    else ['/home/admin/.nvm/versions/node/v24.13.1/bin/codex', '/usr/local/bin/codex']
 )
 GEMINI_PATHS = (
     [_gemini_path_env] if _gemini_path_env
@@ -100,6 +106,13 @@ def _find_claude():
         if os.path.isfile(p) and os.access(p, os.X_OK):
             return p
     raise RuntimeError("claude CLI not found at: " + ", ".join(CLAUDE_PATHS))
+
+
+def _find_codex():
+    for p in CODEX_PATHS:
+        if os.path.isfile(p) and os.access(p, os.X_OK):
+            return p
+    raise RuntimeError("codex CLI not found at: " + ", ".join(CODEX_PATHS))
 
 
 def _find_gemini():
@@ -298,11 +311,12 @@ class RunningJob:
     """
     __slots__ = ('job_id', 'prompt_id', 'job_def_id', 'process', 'timeout', 'started',
                  'use_gemini', 'use_remote', 'output_json', 'job_dir', 'tjai_entry_id',
-                 'remote_model', 'next_poll')
+                 'remote_model', 'next_poll', 'output_file')
 
     def __init__(self, job_id, prompt_id, job_def_id, process, timeout,
                  use_gemini=False, job_dir=None, use_remote=False,
-                 tjai_entry_id=None, remote_model=None, output_json=False):
+                 tjai_entry_id=None, remote_model=None, output_json=False,
+                 output_file=None):
         self.job_id = job_id
         self.prompt_id = prompt_id
         self.job_def_id = job_def_id
@@ -316,6 +330,7 @@ class RunningJob:
         self.tjai_entry_id = tjai_entry_id
         self.remote_model = remote_model
         self.next_poll = 0.0
+        self.output_file = output_file
 
 
 class Worker:
@@ -484,6 +499,9 @@ class Worker:
         use_gemini = False
         use_remote = False
         cmd = None
+        stdin_content = prompt.content
+        codex_env = {}
+        output_file = None
         if model in REMOTE_MODELS:
             # Remote dispatch via tjai — no local subprocess.
             # The prompt is the system prompt plus user content combined,
@@ -509,6 +527,22 @@ class Worker:
                  f'Remotejob {job.id} staged on tjai entry {tjai_entry_id} '
                  f'(model={model})',
                  job_id=str(job.id), tjai_entry_id=tjai_entry_id)
+        elif model in CODEX_MODELS:
+            codex_path = _find_codex()
+            combined = (
+                f"SYSTEM INSTRUCTIONS (follow these for all responses):\n"
+                f"{system_prompt.content}\n\n"
+                f"USER REQUEST:\n{prompt.content}"
+            )
+            codex_output_name = 'codex-output.md'
+            output_file = os.path.join(job_dir, codex_output_name)
+            cmd, codex_env = build_codex_command(
+                codex_path,
+                model,
+                mcp_conf if mcp_tools and mcp_conf else None,
+                output_last_message=codex_output_name,
+            )
+            stdin_content = combined
         elif model in GEMINI_MODELS:
             gemini_path = _find_gemini()
             combined = (
@@ -588,6 +622,7 @@ class Worker:
             'NODE_EXTRA_CA_CERTS': CA_BUNDLE,
             'SSL_CERT_FILE': CA_BUNDLE,
         }
+        env.update(codex_env)
         # DeepSeek runs need DEEPSEEK_API_KEY in the subprocess env. Read
         # from Django settings (loaded from .env via python-decouple) and
         # inject only for DeepSeek dispatches — other branches don't need
@@ -628,7 +663,7 @@ class Worker:
                 cwd=job_dir,
             )
             if not use_gemini:
-                proc.stdin.write(prompt.content)
+                proc.stdin.write(stdin_content)
             proc.stdin.close()
 
         self.running[str(job.id)] = RunningJob(
@@ -639,10 +674,16 @@ class Worker:
             timeout=timeout,
             use_gemini=use_gemini,
             use_remote=use_remote,
-            output_json=(not use_gemini and not use_remote and model not in DEEPSEEK_MODELS),
+            output_json=(
+                not use_gemini
+                and not use_remote
+                and model not in CODEX_MODELS
+                and model not in DEEPSEEK_MODELS
+            ),
             job_dir=job_dir if use_gemini else None,
             tjai_entry_id=tjai_entry_id if use_remote else None,
             remote_model=model if use_remote else None,
+            output_file=output_file,
         )
 
         _log('info',
@@ -757,7 +798,27 @@ class Worker:
                 stdout = rj.process.stdout.read()
                 stderr = rj.process.stderr.read()
 
-                if rj.use_gemini and rj.job_dir:
+                if rj.output_file:
+                    try:
+                        with open(rj.output_file) as f:
+                            content = f.read().strip()
+                    except OSError as e:
+                        content = ''
+                        stderr = (stderr + f'\nFailed to read Codex output file: {e}').strip()
+                    diagnostics = '\n'.join(
+                        part for part in [stderr.strip(), stdout.strip()] if part
+                    )
+                    if retcode == 0 and content:
+                        self._complete_job(rj, content, elapsed, stderr=diagnostics)
+                    elif retcode == 0:
+                        self._finish_job(
+                            rj, 'failed',
+                            f'Codex wrote empty output file (stdout: {stdout}, stderr: {stderr})')
+                    else:
+                        self._finish_job(
+                            rj, 'failed',
+                            f'Codex exited {retcode}: {stderr or stdout}')
+                elif rj.use_gemini and rj.job_dir:
                     # Gemini writes output to files; stdout is thinking trace
                     import glob
                     md_files = glob.glob(os.path.join(rj.job_dir, '*.md'))
