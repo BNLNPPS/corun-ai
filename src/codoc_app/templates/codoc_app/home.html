@@ -115,7 +115,11 @@ function setHTML(container, html) {
         s.textContent = old.textContent;
         old.replaceWith(s);
     });
-    codocTypeset(container);
+    if (window.MathJax?.typesetPromise) {
+        MathJax.typesetPromise([container]).catch(err => {
+            console.warn('MathJax typesetting failed:', err);
+        });
+    }
 }
 
 function selectItem(idx, skipHistory) {
