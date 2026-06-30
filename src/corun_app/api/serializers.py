@@ -7,7 +7,8 @@ from urllib.parse import urlparse
 from rest_framework import serializers
 
 from corun_app.models import (
-    Job, JobDefinition, JobNotificationSubscription, Page, PageTag, Prompt, Section,
+    Comment, Job, JobDefinition, JobNotificationSubscription, Page, PageTag,
+    Prompt, Section,
 )
 
 
@@ -49,19 +50,73 @@ class PromptDetailSerializer(serializers.ModelSerializer):
 
 class PageDetailSerializer(serializers.ModelSerializer):
     section_name = serializers.CharField(source='section.name', read_only=True)
+    title = serializers.SerializerMethodField()
     tags = serializers.SerializerMethodField()
 
     class Meta:
         model = Page
         fields = [
             'id', 'group_id', 'version', 'is_current',
-            'section', 'section_name', 'content', 'content_rendered',
+            'section', 'section_name', 'title', 'content', 'content_rendered',
             'status', 'tags', 'data', 'created_at', 'modified_at',
         ]
+
+    def get_title(self, obj):
+        return (obj.data or {}).get('title', '')
 
     def get_tags(self, obj):
         return list(PageTag.objects.filter(
             page_group_id=obj.group_id).order_by('tag_name').values_list('tag_name', flat=True))
+
+
+class PageCreateSerializer(serializers.Serializer):
+    section = serializers.SlugRelatedField(
+        slug_field='name', queryset=Section.objects.all())
+    content = serializers.CharField()
+    title = serializers.CharField(required=False, allow_blank=True)
+    status = serializers.CharField(required=False, allow_blank=True, default='published')
+    data = serializers.JSONField(required=False, default=dict)
+    tags = serializers.ListField(
+        child=serializers.CharField(allow_blank=False),
+        required=False,
+        default=list,
+    )
+
+
+class PageVersionCreateSerializer(serializers.Serializer):
+    section = serializers.SlugRelatedField(
+        slug_field='name', queryset=Section.objects.all(), required=False)
+    content = serializers.CharField()
+    title = serializers.CharField(required=False, allow_blank=True)
+    status = serializers.CharField(required=False, allow_blank=True)
+    data = serializers.JSONField(required=False, default=dict)
+    tags = serializers.ListField(
+        child=serializers.CharField(allow_blank=False),
+        required=False,
+    )
+
+
+class CommentSerializer(serializers.ModelSerializer):
+    author_username = serializers.CharField(source='author.username', read_only=True)
+
+    class Meta:
+        model = Comment
+        fields = [
+            'id', 'page', 'author', 'author_username', 'content', 'data',
+            'created_at', 'modified_at',
+        ]
+        read_only_fields = [
+            'id', 'page', 'author', 'author_username', 'created_at', 'modified_at',
+        ]
+
+
+class CommentCreateSerializer(serializers.Serializer):
+    content = serializers.CharField()
+    data = serializers.JSONField(required=False, default=dict)
+
+
+class PageTagsUpdateSerializer(serializers.Serializer):
+    tags = serializers.ListField(child=serializers.CharField(allow_blank=False))
 
 
 class JobDefinitionSerializer(serializers.ModelSerializer):

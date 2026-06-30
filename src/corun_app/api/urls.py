@@ -1,13 +1,19 @@
 from django.urls import path
 
 from .views import (
+    CommentDetailView,
     JobAbortView,
     JobCreateView,
     JobDefinitionListView,
     JobDetailView,
     JobNotificationSubscriptionDetailView,
     JobNotificationSubscriptionListView,
+    PageCommentListCreateView,
     PageDetailView,
+    PageListCreateView,
+    PageTagsUpdateView,
+    PageVersionDetailView,
+    PageVersionListCreateView,
     PromptCreateView,
     PromptDetailView,
     SectionDetailView,
@@ -26,7 +32,29 @@ urlpatterns = [
     path('v1/prompts/<uuid:group_id>/', PromptDetailView.as_view(), name='prompt-detail'),
 
     # Pages
+    path('v1/pages/', PageListCreateView.as_view(), name='page-list-create'),
     path('v1/pages/<uuid:group_id>/', PageDetailView.as_view(), name='page-detail'),
+    path(
+        'v1/pages/<uuid:group_id>/versions/',
+        PageVersionListCreateView.as_view(),
+        name='page-version-list-create',
+    ),
+    path(
+        'v1/pages/<uuid:group_id>/versions/<int:version>/',
+        PageVersionDetailView.as_view(),
+        name='page-version-detail',
+    ),
+    path(
+        'v1/pages/<uuid:group_id>/comments/',
+        PageCommentListCreateView.as_view(),
+        name='page-comment-list-create',
+    ),
+    path(
+        'v1/pages/<uuid:group_id>/tags/',
+        PageTagsUpdateView.as_view(),
+        name='page-tags-update',
+    ),
+    path('v1/comments/<uuid:comment_id>/', CommentDetailView.as_view(), name='comment-detail'),
 
     # Jobs
     path('v1/jobs/', JobCreateView.as_view(), name='job-create'),
