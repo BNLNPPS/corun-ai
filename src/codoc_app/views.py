@@ -82,6 +82,15 @@ def _set_page_tags(page, tags):
         PageTag.objects.filter(page_group_id=page.group_id, tag_name=tag_name).delete()
 
 
+def _ui_visible_pages():
+    """Pages shown in codoc browse/list UI.
+
+    Direct page URLs still work for hidden pages; this flag only prevents
+    backend/integration documents from appearing automatically in the UI.
+    """
+    return Page.objects.exclude(data__ui_visible=False)
+
+
 # ── Browse (two-panel home) ──────────────────────────────────────────────────
 
 def home(request):
@@ -117,7 +126,7 @@ def home(request):
 
         for cp in current_prompts:
             cp.comment_count = comment_counts.get(cp.group_id, 0) + page_comment_by_group.get(cp.group_id, 0)
-            all_pages = list(Page.objects.filter(
+            all_pages = list(_ui_visible_pages().filter(
                 prompt__group_id=cp.group_id,
                 section=sec,
                 is_current=True, status='published',
@@ -164,7 +173,7 @@ def home(request):
                     pg.comment_count = page_comment_counts.get(pg.id, 0)
 
         # Orphaned or moved pages — show as standalone items in Page.section.
-        orphan_pages = list(Page.objects.filter(
+        orphan_pages = list(_ui_visible_pages().filter(
             Q(prompt__isnull=True) | ~Q(prompt__section=sec),
             section=sec,
             is_current=True, status='published',
@@ -174,7 +183,12 @@ def home(request):
         sec.browse_items = browse_items
         sec.orphan_pages = orphan_pages
 
-    tag_counts = list(PageTag.objects.values('tag_name').annotate(
+    visible_page_groups = _ui_visible_pages().filter(
+        is_current=True, status='published',
+    ).values_list('group_id', flat=True)
+    tag_counts = list(PageTag.objects.filter(
+        page_group_id__in=visible_page_groups,
+    ).values('tag_name').annotate(
         count=Count('id')).order_by('tag_name'))
     return render(request, 'codoc_app/home.html', {
         'sections': sections,
@@ -207,7 +221,7 @@ def prompt_info_fragment(request, group_id):
         same_text_ids = list(Prompt.objects.filter(
             group_id=prompt.group_id, content=prompt.content
         ).values_list('id', flat=True))
-        pages = list(Page.objects.filter(
+        pages = list(_ui_visible_pages().filter(
             prompt_id__in=same_text_ids, is_current=True, status='published'
         ).order_by('-created_at'))
     else:
@@ -215,7 +229,7 @@ def prompt_info_fragment(request, group_id):
         same_text_ids = list(Prompt.objects.filter(
             group_id=group_id, content=prompt.content
         ).values_list('id', flat=True))
-        pages = list(Page.objects.filter(
+        pages = list(_ui_visible_pages().filter(
             prompt_id__in=same_text_ids, is_current=True, status='published'
         ).order_by('-created_at'))
     # Active jobs for this prompt group
@@ -256,10 +270,10 @@ def prompt_fragment(request, group_id):
     vid = request.GET.get('vid')
     if vid:
         prompt = get_object_or_404(Prompt, id=vid)
-        pages = Page.objects.filter(prompt=prompt, is_current=True)
+        pages = _ui_visible_pages().filter(prompt=prompt, is_current=True)
     else:
         prompt = get_object_or_404(Prompt, group_id=group_id, is_current=True)
-        pages = Page.objects.filter(prompt__group_id=group_id, is_current=True)
+        pages = _ui_visible_pages().filter(prompt__group_id=group_id, is_current=True)
     job_def = _get_prompt_def(prompt)
     definitions = JobDefinition.objects.filter(status='active')
     html = render_to_string('codoc_app/_prompt_fragment.html', {
@@ -639,7 +653,7 @@ def sysprompt_version_api(request, group_id, version):
 def section_detail(request, section):
     sec = get_object_or_404(Section, name=section)
     prompts = Prompt.objects.filter(section=sec, is_current=True).exclude(status='rejected')
-    pages = Page.objects.filter(section=sec, is_current=True, status='published')
+    pages = _ui_visible_pages().filter(section=sec, is_current=True, status='published')
     return render(request, 'codoc_app/section.html', {
         'section': sec, 'prompts': prompts, 'pages': pages,
     })
@@ -647,7 +661,7 @@ def section_detail(request, section):
 
 def prompt_detail(request, group_id):
     prompt = get_object_or_404(Prompt, group_id=group_id, is_current=True)
-    pages = Page.objects.filter(prompt__group_id=group_id, is_current=True)
+    pages = _ui_visible_pages().filter(prompt__group_id=group_id, is_current=True)
     return render(request, 'codoc_app/prompt.html', {'prompt': prompt, 'pages': pages})
 
 
