@@ -17,3 +17,6 @@ First deployment: code documentation for ePIC at epic-devcloud.org/doc/
 - In-table versioning: group_id + version, is_current flag
 - python-decouple for all config, env prefix CORUN_
 - Zero silent failures: every error logged, every except block has traceback
+- The service/product name is `corun-ai`. Do not write `CORUN` as a product or
+  system name in prose, UI text, reports, logs, or commit messages. The `CORUN_`
+  environment-variable prefix is a compatibility/config prefix only.
