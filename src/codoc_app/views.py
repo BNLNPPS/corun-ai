@@ -91,11 +91,27 @@ def _ui_visible_pages():
     return Page.objects.exclude(data__ui_visible=False)
 
 
+def _ui_visible_sections():
+    """Sections shown in codoc browse/list UI."""
+    return Section.objects.filter(
+        Q(data__ui_visible=True) | Q(data__ui_visible__isnull=True),
+        status='active',
+    ).order_by('data__sort_order', 'name')
+
+
+def _ui_sections_with_current(current_section):
+    sections = list(_ui_visible_sections())
+    if current_section and current_section not in sections:
+        current_section.display_label = f"{current_section.title or current_section.name} (hidden)"
+        sections.insert(0, current_section)
+    return sections
+
+
 # ── Browse (two-panel home) ──────────────────────────────────────────────────
 
 def home(request):
     """Two-panel browse: prompt versions with their pages nested underneath."""
-    sections = Section.objects.filter(status='active').order_by('data__sort_order', 'name')
+    sections = _ui_visible_sections()
 
     for sec in sections:
         # Get current prompt versions (the group representatives)
@@ -104,7 +120,6 @@ def home(request):
         ).exclude(status='rejected').order_by('-created_at'))
 
         # Comment counts per prompt group (prompt-level only)
-        from django.db.models import Count
         comment_counts = dict(
             Comment.objects.filter(
                 prompt_group__in=[p.group_id for p in current_prompts],
@@ -295,7 +310,7 @@ def page_fragment(request, group_id):
         job = Job.objects.filter(prompt=page.prompt).order_by('-created_at').first()
         job_def = job.definition if job else None
     comments = Comment.objects.filter(page=page).select_related('author')
-    sections = Section.objects.filter(status='active').order_by('data__sort_order', 'name')
+    sections = _ui_sections_with_current(page.section)
     html = render_to_string('codoc_app/_page_fragment.html', {
         'page': page, 'job_def': job_def, 'comments': comments,
         'sections': sections, 'can_manage_page': _can_manage_page(request.user, page),
@@ -307,11 +322,11 @@ def page_fragment(request, group_id):
 
 def editor_fragment(request, group_id=None):
     """AJAX fragment: inline editor in right panel. group_id=None for new prompt."""
-    sections = Section.objects.filter(status='active').order_by('data__sort_order', 'name')
-    definitions = JobDefinition.objects.filter(status='active')
     prompt = None
     if group_id:
         prompt = Prompt.objects.filter(group_id=group_id, is_current=True).first()
+    sections = _ui_sections_with_current(prompt.section if prompt else None)
+    definitions = JobDefinition.objects.filter(status='active')
     html = render_to_string('codoc_app/_editor_fragment.html', {
         'prompt': prompt, 'sections': sections, 'definitions': definitions,
     }, request=request)
@@ -333,7 +348,7 @@ def save_prompt_api(request):
     if not content:
         return JsonResponse({'error': 'Prompt content is required.'}, status=400)
 
-    sec = get_object_or_404(Section, id=section_id)
+    sec = get_object_or_404(_ui_visible_sections(), id=section_id)
 
     # Determine if this is a new version of existing prompt or brand new
     if source_group_id:
@@ -406,7 +421,9 @@ def prepare_prompt(request):
     # archived/inactive one still surfaces the real choice — marked visibly
     # as inactive. Order: active first, then everything else.
     from django.db.models import Case, When, IntegerField, Value
-    sections = list(Section.objects.annotate(
+    sections = list(Section.objects.filter(
+        Q(data__ui_visible=True) | Q(data__ui_visible__isnull=True),
+    ).annotate(
         _rank=Case(When(status='active', then=Value(0)),
                    default=Value(1), output_field=IntegerField()),
     ).order_by('_rank', 'data__sort_order', 'name'))
@@ -498,7 +515,7 @@ def prepare_prompt(request):
                 },
             })
 
-        sec = get_object_or_404(Section, id=section_id)
+        sec = get_object_or_404(_ui_visible_sections(), id=section_id)
         group_id = uuid.uuid4()
         prompt = Prompt.objects.create(
             group_id=group_id, version=1, is_current=True,
@@ -552,7 +569,7 @@ def prompt_edit_frag(request, group_id=None):
     prompt = None
     if group_id:
         prompt = Prompt.objects.filter(group_id=group_id, is_current=True).first()
-    sections = Section.objects.filter(status='active').order_by('data__sort_order', 'name')
+    sections = _ui_sections_with_current(prompt.section if prompt else None)
     definitions = JobDefinition.objects.filter(status='active')
     html = render_to_string('codoc_app/_prompt_edit_fragment.html', {
         'prompt': prompt, 'sections': sections, 'definitions': definitions,
@@ -600,7 +617,7 @@ def page_move_section(request, group_id):
         section_query |= Q(id=uuid.UUID(section_value))
     except ValueError:
         pass
-    section = Section.objects.filter(section_query, status='active').first()
+    section = _ui_visible_sections().filter(section_query).first()
     if section is None:
         return JsonResponse({'error': 'Unknown section.'}, status=400)
 
@@ -651,7 +668,7 @@ def sysprompt_version_api(request, group_id, version):
 # ── Detail pages (direct URL access) ────────────────────────────────────────
 
 def section_detail(request, section):
-    sec = get_object_or_404(Section, name=section)
+    sec = get_object_or_404(_ui_visible_sections(), name=section)
     prompts = Prompt.objects.filter(section=sec, is_current=True).exclude(status='rejected')
     pages = _ui_visible_pages().filter(section=sec, is_current=True, status='published')
     return render(request, 'codoc_app/section.html', {
@@ -669,7 +686,7 @@ def page_detail(request, group_id):
     page = get_object_or_404(Page, group_id=group_id, is_current=True)
     _apply_page_tags([page])
     comments = list(Comment.objects.filter(page=page).select_related('author'))
-    sections = Section.objects.filter(status='active').order_by('data__sort_order', 'name')
+    sections = _ui_sections_with_current(page.section)
     return render(request, 'codoc_app/page.html', {
         'page': page, 'comments': comments, 'sections': sections,
         'can_manage_page': _can_manage_page(request.user, page),

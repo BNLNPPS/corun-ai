@@ -12,7 +12,7 @@
         <span>Move to section</span>
         <select name="section">
             {% for sec in sections %}
-            <option value="{{ sec.name }}"{% if sec.id == page.section_id %} selected{% endif %}>{{ sec.title|default:sec.name }}</option>
+            <option value="{{ sec.name }}"{% if sec.id == page.section_id %} selected{% endif %}>{{ sec.display_label|default:sec.title|default:sec.name }}</option>
             {% endfor %}
         </select>
         <button class="btn" type="submit" style="font-size:11px;padding:2px 8px">Move</button>
