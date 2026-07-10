@@ -57,10 +57,23 @@ def codex_mcp_config_args(mcp_conf):
     return args, env_extra
 
 
-def build_codex_command(codex_path, model, mcp_conf=None,
+def build_codex_command(codex_path, model, mcp_conf=None, effort=None,
                         output_last_message='codex-output.md'):
     """Build the non-interactive Codex command and any extra env vars."""
     codex_mcp_args, codex_env = codex_mcp_config_args(mcp_conf)
+    effort_args = []
+    if effort:
+        if effort == 'max':
+            effort = 'xhigh'
+        allowed = {'none', 'minimal', 'low', 'medium', 'high', 'xhigh'}
+        if effort not in allowed:
+            raise ValueError(
+                f"Unsupported Codex reasoning effort {effort!r}; "
+                f"expected one of {', '.join(sorted(allowed))}"
+            )
+        effort_args = [
+            '-c', f'model_reasoning_effort={_toml_literal(effort)}',
+        ]
     cmd = [
         codex_path, 'exec',
         '--ephemeral',
@@ -69,6 +82,7 @@ def build_codex_command(codex_path, model, mcp_conf=None,
         '-c', 'approval_policy="never"',
         '--skip-git-repo-check',
         '-m', model,
+        *effort_args,
         '-o', output_last_message,
         *codex_mcp_args,
         '-',

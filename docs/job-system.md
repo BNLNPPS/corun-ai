@@ -72,9 +72,10 @@ The model stored in `JobDefinition.data.model` selects the execution branch:
   argument and the user prompt on stdin.
 - Codex models run through `codex exec --ephemeral --ignore-user-config
   --sandbox read-only -c approval_policy="never" --skip-git-repo-check
-  -m <model> -o codex-output.md -`, with combined system and user
-  instructions on stdin. The worker reads `codex-output.md` for page content
-  because Codex writes run status text to stdout.
+  -m <model> -c model_reasoning_effort=<effort> -o codex-output.md -`, with
+  combined system and user instructions on stdin. Model and effort come from
+  the JobDefinition. The worker reads `codex-output.md` for page content because
+  Codex writes run status text to stdout.
 - Gemini models run through Antigravity CLI (`agy --print`) because consumer
   Google AI Pro/Ultra access no longer works through Gemini CLI login.
 - DeepSeek models run through `codoc_app/deepseek_runner.py`.

@@ -480,6 +480,7 @@ class Worker:
             raise RuntimeError("No system prompt configured for definition")
 
         model = job_def.data.get('model', 'sonnet')
+        effort = (job_def.data or {}).get('effort')
         timeout = job_def.data.get('timeout_s', DEFAULT_TIMEOUT)
 
         # Create job dir and write .mcp.json with selected servers
@@ -540,7 +541,8 @@ class Worker:
             cmd, codex_env = build_codex_command(
                 codex_path,
                 model,
-                mcp_conf if mcp_tools and mcp_conf else None,
+                effort=effort,
+                mcp_conf=mcp_conf if mcp_tools and mcp_conf else None,
                 output_last_message=codex_output_name,
             )
             stdin_content = combined
@@ -591,7 +593,6 @@ class Worker:
             # Reasoning effort — passes through to the model's thinking
             # budget. Previously this JobDefinition field was stored but
             # silently ignored; fixed 2026-04-22.
-            effort = (job_def.data or {}).get('effort')
             if effort:
                 cmd += ['--effort', effort]
             # Wire up the MCP tools the definition selected. Without these

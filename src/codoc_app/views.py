@@ -1056,7 +1056,9 @@ def definition_fragment(request, pk):
         d.data['cli_preview'] = (
             f'codex exec --ephemeral --ignore-user-config'
             f' --sandbox read-only -c approval_policy="never"'
-            f' --skip-git-repo-check -m {model} -o codex-output.md{mcp_part} -'
+            f' --skip-git-repo-check -m {model}'
+            f' -c model_reasoning_effort="{effort}"'
+            f' -o codex-output.md{mcp_part} -'
         )
     else:
         mcp_part = ' --mcp-config .mcp.json --allowedTools "mcp__*"' if d.data.get('mcp_tools') else ''

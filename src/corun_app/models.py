@@ -30,7 +30,7 @@ MODEL_CHOICES = [
     ('gemini-3.1-pro-high', 'Gemini 3.1 Pro (High)', 'Gemini'),
     ('deepseek-v4-flash', 'DeepSeek V4 Flash', 'DeepSeek'),
     ('deepseek-v4-pro', 'DeepSeek V4 Pro', 'DeepSeek'),
-    ('gpt-5.5', 'Codex ChatGPT 5.5', 'Codex'),
+    ('gpt-5.6-sol', 'Codex GPT-5.6 Sol', 'Codex'),
     ('gemma4', 'gemma4', 'Gemma'),
     ('gemma4-fast', 'gemma4-fast', 'Gemma'),
     ('qwen', 'qwen', 'Qwen'),
