@@ -86,6 +86,36 @@ MCP_SERVERS = {
             'args': ['stdio'],
         },
     },
+    'github-readonly': {
+        'label': 'GitHub (read-only production software status)',
+        'config': {
+            'command': config('CORUN_GITHUB_MCP_PATH', default='/home/admin/bin/github-mcp-server'),
+            'args': [
+                'stdio',
+                '--read-only',
+            ],
+            'env': {
+                'GITHUB_PERSONAL_ACCESS_TOKEN': config(
+                    'CORUN_GITHUB_TOKEN', default=''
+                ),
+            },
+        },
+    },
+    'tjai': {
+        'label': 'TJAI (profile and worker guidance)',
+        'config': {
+            'type': 'http',
+            'url': config(
+                'CORUN_TJAI_MCP_URL',
+                default='https://etaverse.com/tjai/mcp/',
+            ),
+            'headers': {
+                'Authorization': 'Bearer ' + config(
+                    'CORUN_TJAI_MCP_TOKEN', default=''
+                ),
+            },
+        },
+    },
     'swf-testbed': {
         'label': 'SWF Testbed (PanDA, PCS, Workflows)',
         'config': {
@@ -123,6 +153,23 @@ MCP_SERVERS = {
                 'RUCIO_ACCOUNT': 'eicread',
                 'RUCIO_USERNAME': 'eicread',
                 'RUCIO_PASSWORD': 'eicread',
+            },
+        },
+    },
+    'rucio-bnl': {
+        'label': 'Rucio BNL (PanDA production data management)',
+        'config': {
+            'command': '/home/admin/github/rucio-eic-mcp-server/.venv/bin/rucio-eic-mcp',
+            'args': [],
+            'env': {
+                'RUCIO_URL': 'https://nprucio01.sdcc.bnl.gov:443',
+                'RUCIO_AUTH_TYPE': 'x509',
+                'RUCIO_ACCOUNT': 'panda',
+                'RUCIO_VO': 'eic',
+                'X509_USER_PROXY': config(
+                    'CORUN_RUCIO_BNL_X509_PROXY', default=''
+                ),
+                'TOKEN_FILE_PATH': '/tmp/rucio_eic_bnl_token.txt',
             },
         },
     },

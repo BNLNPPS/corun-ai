@@ -81,6 +81,27 @@ are required for any job to reach it; without either, every connect fails:
   (`deepseek_runner`, httpx) at it. The bundle is a superset of certifi, so it
   is safe for all other HTTPS the subprocesses make.
 
+### Assessment MCP credentials
+
+The production-assessment definitions also select TJAI and BNL Rucio. Their
+credentials are worker-local configuration in `src/.env`:
+
+```bash
+CORUN_TJAI_MCP_URL=https://etaverse.com/tjai/mcp/
+CORUN_TJAI_MCP_TOKEN=<TJAI MCP bearer>
+CORUN_RUCIO_BNL_X509_PROXY=/path/to/renewed/rucio/service-proxy
+CORUN_GITHUB_TOKEN=<GitHub service token>
+```
+
+The BNL proxy must be a renewable service credential readable by the worker;
+do not point corun-ai at a developer's personal proxy. Restart the worker after
+changing these values. JLab Rucio uses the read-only account configured in the
+MCP registry. The assessor's GitHub service is a distinct `github-readonly`
+entry, so workflows using the existing writable `github` entry are unchanged.
+The new token is passed only to the read-only MCP subprocess; the existing
+service configuration is untouched. Its `--read-only` fence removes mutation
+tools while leaving the server's complete read-only surface available.
+
 ### AI runner paths
 
 The worker finds local CLIs from `src/.env` when explicit paths are set:
