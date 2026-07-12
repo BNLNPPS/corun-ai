@@ -4,11 +4,6 @@ import json
 import re
 
 
-MCP_APPROVED_TOOL_NAMES = {
-    'lxr': ['lxr_ident', 'lxr_search', 'lxr_source', 'lxr_list'],
-}
-
-
 def _toml_literal(value):
     """Return a simple TOML literal suitable for Codex -c key=value."""
     return json.dumps(value)
@@ -18,13 +13,18 @@ def codex_mcp_config_args(mcp_conf):
     """Translate corun MCP server config into Codex -c overrides.
 
     Codex runs with --ignore-user-config, so selected MCP servers must be
-    passed explicitly. HTTP bearer tokens are routed through environment
-    variables because process argv is visible to other local users.
+    passed explicitly. Servers in the MCP_SERVERS registry are
+    operator-registered and trusted, so every server gets
+    default_tools_approval_mode="approve": under approval_policy="never"
+    an unapproved tool call is auto-denied ("user cancelled MCP tool
+    call"). HTTP bearer tokens are routed through environment variables
+    because process argv is visible to other local users.
     """
     args = []
     env_extra = {}
     for name, server in sorted((mcp_conf or {}).items()):
         prefix = f'mcp_servers.{name}'
+        args += ['-c', f'{prefix}.default_tools_approval_mode="approve"']
         if server.get('url'):
             args += ['-c', f'{prefix}.url={_toml_literal(server["url"])}']
             headers = server.get('headers') or {}
@@ -35,11 +35,6 @@ def codex_mcp_config_args(mcp_conf):
                 ).strip('_') + '_TOKEN'
                 env_extra[env_name] = auth[len('Bearer '):]
                 args += ['-c', f'{prefix}.bearer_token_env_var={_toml_literal(env_name)}']
-            for tool_name in MCP_APPROVED_TOOL_NAMES.get(name, []):
-                args += [
-                    '-c',
-                    f'{prefix}.tools.{tool_name}.approval_mode="approve"',
-                ]
             continue
 
         command = server.get('command')
@@ -49,11 +44,6 @@ def codex_mcp_config_args(mcp_conf):
             args += ['-c', f'{prefix}.args={_toml_literal(server["args"])}']
         for key, value in sorted((server.get('env') or {}).items()):
             args += ['-c', f'{prefix}.env.{key}={_toml_literal(value)}']
-        for tool_name in MCP_APPROVED_TOOL_NAMES.get(name, []):
-            args += [
-                '-c',
-                f'{prefix}.tools.{tool_name}.approval_mode="approve"',
-            ]
     return args, env_extra
 
 

@@ -62,18 +62,15 @@ check('reads prompt from stdin', cmd[-1] == '-', cmd[-3:])
 print('\n[group] MCP translation')
 check('stdio command configured', 'mcp_servers.lxr.command="/home/admin/github/lxr-mcp-server/.venv/bin/python"' in cmd, joined)
 check('stdio args configured', 'mcp_servers.lxr.args=["/home/admin/github/lxr-mcp-server/lxr_mcp_server.py"]' in cmd, joined)
-check('lxr tools approved',
-      'mcp_servers.lxr.tools.lxr_list.approval_mode="approve"' in cmd
-      and 'mcp_servers.lxr.tools.lxr_search.approval_mode="approve"' in cmd
-      and 'mcp_servers.lxr.tools.lxr_source.approval_mode="approve"' in cmd
-      and 'mcp_servers.lxr.tools.lxr_ident.approval_mode="approve"' in cmd,
+check('registered servers approved (stdio)',
+      'mcp_servers.lxr.default_tools_approval_mode="approve"' in cmd,
+      joined)
+check('registered servers approved (http)',
+      'mcp_servers.swf-testbed.default_tools_approval_mode="approve"' in cmd,
       joined)
 check('http url configured', 'mcp_servers.swf-testbed.url="https://pandaserver02.sdcc.bnl.gov/swf-monitor/mcp/"' in cmd, joined)
 check('bearer token env var configured',
       'mcp_servers.swf-testbed.bearer_token_env_var="CORUN_CODEX_MCP_SWF_TESTBED_TOKEN"' in cmd,
-      joined)
-check('non-lxr tools are not approved implicitly',
-      'mcp_servers.swf-testbed.tools.panda_get_job.approval_mode="approve"' not in cmd,
       joined)
 check('bearer token kept out of argv', 'test-token' not in joined, joined)
 check('bearer token present in env', env_extra.get('CORUN_CODEX_MCP_SWF_TESTBED_TOKEN') == 'test-token', env_extra)
