@@ -168,6 +168,11 @@ cd /var/www/corun-ai
 | PATCH | `/api/v1/notification-subscriptions/<id>/` | Update a webhook subscription |
 | DELETE | `/api/v1/notification-subscriptions/<id>/` | Archive a webhook subscription |
 
+Page and SystemPrompt versioning inherit metadata: a new version created
+over REST inherits the prior version's `data`, supplied keys merge over
+it, and an explicit JSON `null` removes a key — an absent `data` never
+erases existing metadata (identity keys survive content-only updates).
+
 JobDefinition `data` carries the worker contract keys — `model`, `effort`,
 `mcp_tools` (keys from the `MCP_SERVERS` registry, e.g. `swf-testbed`),
 `system_prompt_group_id`, `timeout_s` — validated on write, unknown keys

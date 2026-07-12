@@ -100,6 +100,19 @@ def _with_title(data, title):
     return payload
 
 
+def _merge_data(inherited, supplied):
+    """Version-to-version data semantics: the new version inherits the prior
+    version's data; supplied keys merge over it; an explicit JSON null
+    removes a key. An absent/empty supplied dict never erases metadata."""
+    merged = dict(inherited or {})
+    for key, value in (supplied or {}).items():
+        if value is None:
+            merged.pop(key, None)
+        else:
+            merged[key] = value
+    return merged
+
+
 def _parse_bool(value):
     if value is None or value == '':
         return None
@@ -334,7 +347,7 @@ class PageVersionListCreateView(APIView):
                 content_rendered=_render_markdown(content),
                 status=ser.validated_data.get('status') or current.status,
                 data=_with_title(
-                    ser.validated_data.get('data') or {},
+                    _merge_data(current.data, ser.validated_data.get('data')),
                     ser.validated_data.get('title'),
                 ),
             )
@@ -476,7 +489,7 @@ class SystemPromptListCreateView(APIView):
                     is_current=True,
                     name=(ser.validated_data.get('name') or '').strip() or current.name,
                     content=content,
-                    data=data,
+                    data=_merge_data(current.data, data),
                 )
         else:
             sp = SystemPrompt.objects.create(
