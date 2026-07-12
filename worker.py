@@ -14,6 +14,7 @@ import argparse
 import json
 import logging
 import os
+import ssl
 import subprocess
 import sys
 import time
@@ -156,7 +157,12 @@ class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
         return None
 
 
-_NO_REDIRECT_OPENER = urllib.request.build_opener(_NoRedirectHandler)
+# Notification callbacks may target hosts (e.g. pandaserver02) that omit the
+# IGTF intermediate from their chain — use the same CA bundle the runners get.
+_NO_REDIRECT_OPENER = urllib.request.build_opener(
+    _NoRedirectHandler,
+    urllib.request.HTTPSHandler(context=ssl.create_default_context(cafile=CA_BUNDLE)),
+)
 
 
 def _log(level, message, **kwargs):
@@ -173,6 +179,28 @@ def _log(level, message, **kwargs):
         )
     except Exception:
         pass  # DB might be down — stderr is the fallback
+
+
+def _parse_codex_tokens(text):
+    """Codex exec ends its stderr transcript with a 'tokens used' line
+    followed by the comma-grouped count (older builds: 'tokens used: N').
+    Scan from the end so model prose can't shadow the trailer."""
+    if not text:
+        return None
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    for i in range(len(lines) - 1, -1, -1):
+        low = lines[i].lower()
+        if low == 'tokens used' and i + 1 < len(lines):
+            try:
+                return int(lines[i + 1].replace(',', ''))
+            except ValueError:
+                return None
+        if low.startswith('tokens used:'):
+            try:
+                return int(lines[i].split(':', 1)[1].strip().replace(',', ''))
+            except ValueError:
+                return None
+    return None
 
 
 def _public_url(path):
@@ -810,7 +838,8 @@ class Worker:
                         part for part in [stderr.strip(), stdout.strip()] if part
                     )
                     if retcode == 0 and content:
-                        self._complete_job(rj, content, elapsed, stderr=diagnostics)
+                        self._complete_job(rj, content, elapsed, stderr=diagnostics,
+                                           tokens=_parse_codex_tokens(diagnostics))
                     elif retcode == 0:
                         self._finish_job(
                             rj, 'failed',
