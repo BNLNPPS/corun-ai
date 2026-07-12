@@ -5,17 +5,19 @@ Authentication: Token (Authorization: Token <token>)
 Authorization: IsAuthenticated — any valid token may call any endpoint.
 """
 
+import logging
 import os
 import uuid
 
 import markdown as md_lib
 from django.db import transaction
 from django.db.models import Max, Q
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from corun_app.models import Comment, Job, JobDefinition, Page, PageTag, Prompt, Section
+from corun_app.models import AppLog, Comment, Job, JobDefinition, Page, PageTag, Prompt, Section
 from corun_app.models import JobNotificationSubscription, SystemPrompt
 
 from .serializers import (
@@ -41,6 +43,26 @@ from .serializers import (
 )
 
 JOBS_DATA_DIR = '/var/www/corun-ai/data/jobs'
+
+logger = logging.getLogger(__name__)
+
+
+def _applog(request, message, **extra):
+    """Log an API mutation to AppLog (source='api'). Best-effort — an AppLog
+    failure never fails the request; stderr is the fallback."""
+    extra = {'user': getattr(request.user, 'username', None), **extra}
+    logger.info('%s %s', message, extra)
+    try:
+        AppLog.objects.create(
+            source='api',
+            timestamp=timezone.now(),
+            level=logging.INFO,
+            levelname='INFO',
+            message=message,
+            extra_data=extra,
+        )
+    except Exception:
+        logger.exception('AppLog write failed for: %s', message)
 
 
 def _render_markdown(content):
@@ -119,6 +141,8 @@ class SectionListView(APIView):
             data=ser.validated_data.get('data') or {},
             status='active',
         )
+        _applog(request, f"Section '{section.name}' created via API",
+                section_id=str(section.id))
         return Response(SectionSerializer(section).data, status=status.HTTP_201_CREATED)
 
 
@@ -170,6 +194,8 @@ class PromptCreateView(APIView):
             status='pending',
             data={'definition_id': str(definition_id)} if definition_id else {},
         )
+        _applog(request, f"Prompt created via API in section '{section.name}'",
+                prompt_group_id=str(prompt.group_id))
         return Response(PromptDetailSerializer(prompt).data, status=status.HTTP_201_CREATED)
 
 
@@ -254,6 +280,8 @@ class PageListCreateView(APIView):
             ),
         )
         _set_page_tags(page.group_id, ser.validated_data.get('tags') or [])
+        _applog(request, f"Page created via API in section '{page.section.name}'",
+                page_group_id=str(page.group_id))
         return Response(PageDetailSerializer(page).data, status=status.HTTP_201_CREATED)
 
 
@@ -314,6 +342,8 @@ class PageVersionListCreateView(APIView):
             if 'tags' in ser.validated_data:
                 _set_page_tags(page.group_id, ser.validated_data.get('tags') or [])
 
+        _applog(request, f'Page {group_id} v{page.version} created via API',
+                page_group_id=str(group_id), version=page.version)
         return Response(PageDetailSerializer(page).data, status=status.HTTP_201_CREATED)
 
 
@@ -356,6 +386,8 @@ class PageCommentListCreateView(APIView):
             content=ser.validated_data['content'],
             data=ser.validated_data.get('data') or {},
         )
+        _applog(request, f'Comment added via API on page {group_id}',
+                comment_id=str(comment.id), page_group_id=str(group_id))
         return Response(CommentSerializer(comment).data, status=status.HTTP_201_CREATED)
 
 
@@ -374,6 +406,7 @@ class CommentDetailView(APIView):
         ):
             return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
         comment.delete()
+        _applog(request, f'Comment {comment_id} deleted via API', comment_id=str(comment_id))
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -389,6 +422,8 @@ class PageTagsUpdateView(APIView):
         tags = _normalize_tag_list(ser.validated_data['tags'])
         _set_page_tags(group_id, tags)
         page = Page.objects.get(group_id=group_id, is_current=True)
+        _applog(request, f'Page {group_id} tags updated via API',
+                page_group_id=str(group_id), tags=tags)
         return Response({
             'ok': True,
             'group_id': str(group_id),
@@ -452,6 +487,8 @@ class SystemPromptListCreateView(APIView):
                 content=content,
                 data=data,
             )
+        _applog(request, f"System prompt '{sp.name}' v{sp.version} created via API",
+                group_id=str(sp.group_id), version=sp.version)
         return Response(SystemPromptSerializer(sp).data, status=status.HTTP_201_CREATED)
 
 
@@ -525,6 +562,8 @@ class JobCreateView(APIView):
 
         from codoc_app.generate import start_generation
         job = start_generation(prompt, definition, triggered_by=request.user)
+        _applog(request, f"Job {job.id} submitted via API (definition '{definition.name}')",
+                job_id=str(job.id), definition_id=str(definition.id))
         return Response(JobDetailSerializer(job).data, status=status.HTTP_201_CREATED)
 
 
@@ -550,6 +589,7 @@ class JobAbortView(APIView):
         if job.prompt:
             job.prompt.status = 'saved'
             job.prompt.save(update_fields=['status', 'modified_at'])
+        _applog(request, f'Job {job.id} aborted via API', job_id=str(job.id))
         return Response(JobDetailSerializer(job).data)
 
 
@@ -620,6 +660,8 @@ class JobDefinitionListView(APIView):
             status=ser.validated_data.get('status') or 'active',
             data=ser.validated_data.get('data') or {},
         )
+        _applog(request, f"Job definition '{definition.name}' created via API",
+                definition_id=str(definition.id))
         return Response(
             JobDefinitionDetailSerializer(definition).data,
             status=status.HTTP_201_CREATED,
@@ -669,6 +711,9 @@ class JobDefinitionDetailView(APIView):
                     merged[key] = value
             definition.data = merged
         definition.save()
+        _applog(request, f"Job definition '{definition.name}' updated via API",
+                definition_id=str(definition.id),
+                fields=sorted(ser.validated_data.keys()))
         return Response(JobDefinitionDetailSerializer(definition).data)
 
 
@@ -692,6 +737,8 @@ class JobNotificationSubscriptionListView(APIView):
         if not ser.is_valid():
             return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
         subscription = ser.save(created_by=request.user)
+        _applog(request, f"Notification subscription '{subscription.name}' created via API",
+                subscription_id=str(subscription.id))
         return Response(
             JobNotificationSubscriptionSerializer(subscription).data,
             status=status.HTTP_201_CREATED,
@@ -726,6 +773,8 @@ class JobNotificationSubscriptionDetailView(APIView):
         if not ser.is_valid():
             return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
         subscription = ser.save()
+        _applog(request, f"Notification subscription '{subscription.name}' updated via API",
+                subscription_id=str(subscription.id))
         return Response(JobNotificationSubscriptionSerializer(subscription).data)
 
     def delete(self, request, subscription_id):
@@ -734,4 +783,6 @@ class JobNotificationSubscriptionDetailView(APIView):
             return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
         subscription.status = 'archived'
         subscription.save(update_fields=['status', 'modified_at'])
+        _applog(request, f"Notification subscription '{subscription.name}' archived via API",
+                subscription_id=str(subscription.id))
         return Response(status=status.HTTP_204_NO_CONTENT)
