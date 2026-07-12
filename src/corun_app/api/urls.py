@@ -4,8 +4,10 @@ from .views import (
     CommentDetailView,
     JobAbortView,
     JobCreateView,
+    JobDefinitionDetailView,
     JobDefinitionListView,
     JobDetailView,
+    JobLogView,
     JobNotificationSubscriptionDetailView,
     JobNotificationSubscriptionListView,
     PageCommentListCreateView,
@@ -18,6 +20,8 @@ from .views import (
     PromptDetailView,
     SectionDetailView,
     SectionListView,
+    SystemPromptDetailView,
+    SystemPromptListCreateView,
 )
 
 app_name = 'api'
@@ -56,13 +60,22 @@ urlpatterns = [
     ),
     path('v1/comments/<uuid:comment_id>/', CommentDetailView.as_view(), name='comment-detail'),
 
+    # System prompts
+    path('v1/system-prompts/', SystemPromptListCreateView.as_view(),
+         name='system-prompt-list-create'),
+    path('v1/system-prompts/<uuid:group_id>/', SystemPromptDetailView.as_view(),
+         name='system-prompt-detail'),
+
     # Jobs
     path('v1/jobs/', JobCreateView.as_view(), name='job-create'),
     path('v1/jobs/<uuid:job_id>/', JobDetailView.as_view(), name='job-detail'),
     path('v1/jobs/<uuid:job_id>/abort/', JobAbortView.as_view(), name='job-abort'),
+    path('v1/jobs/<uuid:job_id>/log/', JobLogView.as_view(), name='job-log'),
 
     # JobDefinitions
     path('v1/definitions/', JobDefinitionListView.as_view(), name='definition-list'),
+    path('v1/definitions/<uuid:definition_id>/', JobDefinitionDetailView.as_view(),
+         name='definition-detail'),
 
     # Job notification subscriptions
     path(

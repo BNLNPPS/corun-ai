@@ -148,10 +148,18 @@ cd /var/www/corun-ai
 |--------|-----|-------------|
 | GET | `/api/v1/sections/` | List active Sections |
 | GET | `/api/v1/sections/<name>/` | Section detail + current Prompts |
+| POST | `/api/v1/sections/` | Create a Section |
 | GET | `/api/v1/prompts/<group_id>/` | Prompt detail (content, status, version) |
 | GET | `/api/v1/pages/<group_id>/` | Page detail (rendered content, metadata) |
-| GET | `/api/v1/jobs/<job_id>/` | Job status and result_page_group_id |
-| GET | `/api/v1/definitions/` | List active JobDefinitions |
+| GET | `/api/v1/system-prompts/` | List current SystemPrompts (`?name=` filter) |
+| GET | `/api/v1/system-prompts/<group_id>/` | Current version (`?version=N` for a specific one) |
+| POST | `/api/v1/system-prompts/` | Create a SystemPrompt group, or a new version when `group_id` is given |
+| GET | `/api/v1/jobs/<job_id>/` | Job status, error, result_page_group_id |
+| GET | `/api/v1/jobs/<job_id>/log/` | Run outcome: error, runner stderr, thinking trace |
+| GET | `/api/v1/definitions/` | List JobDefinitions with full data (`?status=` filter, default active) |
+| GET | `/api/v1/definitions/<id>/` | JobDefinition detail |
+| POST | `/api/v1/definitions/` | Create a JobDefinition |
+| PATCH | `/api/v1/definitions/<id>/` | Update a JobDefinition (`data` merged key-by-key; JSON null removes a key) |
 | GET | `/api/v1/notification-subscriptions/` | List your webhook subscriptions |
 | POST | `/api/v1/prompts/` | Create a new prompt |
 | POST | `/api/v1/jobs/` | Submit a generation job |
@@ -159,6 +167,13 @@ cd /var/www/corun-ai
 | POST | `/api/v1/notification-subscriptions/` | Create an HTTPS webhook subscription |
 | PATCH | `/api/v1/notification-subscriptions/<id>/` | Update a webhook subscription |
 | DELETE | `/api/v1/notification-subscriptions/<id>/` | Archive a webhook subscription |
+
+JobDefinition `data` carries the worker contract keys — `model`, `effort`,
+`mcp_tools` (keys from the `MCP_SERVERS` registry, e.g. `swf-testbed`),
+`system_prompt_group_id`, `timeout_s` — validated on write, unknown keys
+passed through. With these plus the prompts + jobs POSTs, a service client
+can drive corun-ai end to end (define, submit, monitor, retrieve) with no
+human hands on configuration.
 
 ## Clients & integrations
 

@@ -5,6 +5,7 @@ Authentication: Token (Authorization: Token <token>)
 Authorization: IsAuthenticated — any valid token may call any endpoint.
 """
 
+import os
 import uuid
 
 import markdown as md_lib
@@ -15,13 +16,15 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from corun_app.models import Comment, Job, JobDefinition, Page, PageTag, Prompt, Section
-from corun_app.models import JobNotificationSubscription
+from corun_app.models import JobNotificationSubscription, SystemPrompt
 
 from .serializers import (
     CommentCreateSerializer,
     CommentSerializer,
     JobCreateSerializer,
+    JobDefinitionDetailSerializer,
     JobDefinitionSerializer,
+    JobDefinitionWriteSerializer,
     JobDetailSerializer,
     JobNotificationSubscriptionSerializer,
     PageCreateSerializer,
@@ -30,9 +33,14 @@ from .serializers import (
     PageVersionCreateSerializer,
     PromptCreateSerializer,
     PromptDetailSerializer,
+    SectionCreateSerializer,
     SectionDetailSerializer,
     SectionSerializer,
+    SystemPromptCreateSerializer,
+    SystemPromptSerializer,
 )
+
+JOBS_DATA_DIR = '/var/www/corun-ai/data/jobs'
 
 
 def _render_markdown(content):
@@ -86,11 +94,32 @@ def _parse_bool(value):
 # ── Sections ──────────────────────────────────────────────────────────────────
 
 class SectionListView(APIView):
-    """GET /api/v1/sections/ — list active sections."""
+    """GET /api/v1/sections/ — list active sections.
+    POST /api/v1/sections/ — create a section."""
 
     def get(self, request):
         sections = Section.objects.filter(status='active').order_by('data__sort_order', 'name')
         return Response(SectionSerializer(sections, many=True).data)
+
+    def post(self, request):
+        ser = SectionCreateSerializer(data=request.data)
+        if not ser.is_valid():
+            return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        name = ser.validated_data['name'].strip()
+        if Section.objects.filter(name=name).exists():
+            return Response(
+                {'name': 'A section with this name already exists.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+        section = Section.objects.create(
+            name=name,
+            title=ser.validated_data['title'],
+            description=ser.validated_data.get('description') or '',
+            data=ser.validated_data.get('data') or {},
+            status='active',
+        )
+        return Response(SectionSerializer(section).data, status=status.HTTP_201_CREATED)
 
 
 class SectionDetailView(APIView):
@@ -367,6 +396,84 @@ class PageTagsUpdateView(APIView):
         })
 
 
+# ── System Prompts ────────────────────────────────────────────────────────────
+
+class SystemPromptListCreateView(APIView):
+    """GET /api/v1/system-prompts/ — list current system prompts (?name= filter).
+    POST /api/v1/system-prompts/ — create a new group, or a new version of an
+    existing group when group_id is given."""
+
+    def get(self, request):
+        qs = SystemPrompt.objects.filter(is_current=True).order_by('name')
+        name = (request.query_params.get('name') or '').strip()
+        if name:
+            qs = qs.filter(name=name)
+        return Response(SystemPromptSerializer(qs, many=True).data)
+
+    def post(self, request):
+        ser = SystemPromptCreateSerializer(data=request.data)
+        if not ser.is_valid():
+            return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        group_id = ser.validated_data.get('group_id')
+        content = ser.validated_data['content']
+        data = ser.validated_data.get('data') or {}
+
+        if group_id:
+            with transaction.atomic():
+                current = SystemPrompt.objects.select_for_update().filter(
+                    group_id=group_id, is_current=True).first()
+                if current is None:
+                    return Response(
+                        {'group_id': 'No system prompt group with this id.'},
+                        status=status.HTTP_404_NOT_FOUND,
+                    )
+                current.is_current = False
+                current.save(update_fields=['is_current', 'modified_at'])
+
+                next_version = (
+                    SystemPrompt.objects.filter(group_id=group_id).aggregate(
+                        m=Max('version'))['m'] or 0
+                ) + 1
+                sp = SystemPrompt.objects.create(
+                    group_id=group_id,
+                    version=next_version,
+                    is_current=True,
+                    name=(ser.validated_data.get('name') or '').strip() or current.name,
+                    content=content,
+                    data=data,
+                )
+        else:
+            sp = SystemPrompt.objects.create(
+                group_id=uuid.uuid4(),
+                version=1,
+                is_current=True,
+                name=ser.validated_data['name'].strip(),
+                content=content,
+                data=data,
+            )
+        return Response(SystemPromptSerializer(sp).data, status=status.HTTP_201_CREATED)
+
+
+class SystemPromptDetailView(APIView):
+    """GET /api/v1/system-prompts/<group_id>/ — current version (?version=N
+    for a specific one)."""
+
+    def get(self, request, group_id):
+        version = request.query_params.get('version')
+        qs = SystemPrompt.objects.filter(group_id=group_id)
+        if version is not None:
+            try:
+                sp = qs.get(version=int(version))
+            except (ValueError, SystemPrompt.DoesNotExist):
+                return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        else:
+            sp = qs.filter(is_current=True).first()
+            if sp is None:
+                return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(SystemPromptSerializer(sp).data)
+
+
 # ── Jobs ──────────────────────────────────────────────────────────────────────
 
 class JobDetailView(APIView):
@@ -446,14 +553,123 @@ class JobAbortView(APIView):
         return Response(JobDetailSerializer(job).data)
 
 
+class JobLogView(APIView):
+    """GET /api/v1/jobs/<job_id>/log/ — machine-readable run outcome: the
+    job's error, the runner's captured stderr (stored on the result page for
+    completed runs, embedded in `error` for failures), and the thinking
+    trace file when one was written."""
+
+    def get(self, request, job_id):
+        try:
+            job = Job.objects.get(id=job_id)
+        except Job.DoesNotExist:
+            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        payload = {
+            'job_id': str(job.id),
+            'status': job.status,
+            'error': job.data.get('error'),
+            'stderr': None,
+            'thinking': None,
+        }
+        page_group_id = job.data.get('result_page_group_id') or job.data.get('result_page_id')
+        if page_group_id:
+            page = Page.objects.filter(group_id=page_group_id, is_current=True).first()
+            if page:
+                payload['stderr'] = (page.data or {}).get('stderr') or None
+
+        thinking_path = os.path.join(JOBS_DATA_DIR, str(job.id), 'thinking.txt')
+        try:
+            with open(thinking_path) as f:
+                payload['thinking'] = f.read()
+        except OSError:
+            pass
+        return Response(payload)
+
+
 # ── JobDefinitions ────────────────────────────────────────────────────────────
 
 class JobDefinitionListView(APIView):
-    """GET /api/v1/definitions/ — list active job definitions."""
+    """GET /api/v1/definitions/ — list job definitions (?status=active|paused|
+    archived|all, default active).
+    POST /api/v1/definitions/ — create a job definition."""
 
     def get(self, request):
-        definitions = JobDefinition.objects.filter(status='active').order_by('name')
-        return Response(JobDefinitionSerializer(definitions, many=True).data)
+        status_filter = (request.query_params.get('status') or 'active').strip()
+        qs = JobDefinition.objects.all().order_by('name')
+        if status_filter not in ('all', '*'):
+            qs = qs.filter(status=status_filter)
+        return Response(JobDefinitionDetailSerializer(qs, many=True).data)
+
+    def post(self, request):
+        ser = JobDefinitionWriteSerializer(data=request.data)
+        if not ser.is_valid():
+            return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
+        name = (ser.validated_data.get('name') or '').strip()
+        if not name:
+            return Response({'name': 'This field is required.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if JobDefinition.objects.filter(name=name).exists():
+            return Response(
+                {'name': 'A definition with this name already exists.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+        definition = JobDefinition.objects.create(
+            name=name,
+            description=ser.validated_data.get('description') or '',
+            status=ser.validated_data.get('status') or 'active',
+            data=ser.validated_data.get('data') or {},
+        )
+        return Response(
+            JobDefinitionDetailSerializer(definition).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class JobDefinitionDetailView(APIView):
+    """GET /api/v1/definitions/<definition_id>/ — definition detail.
+    PATCH /api/v1/definitions/<definition_id>/ — update; `data` is merged
+    key-by-key (a JSON null removes a key)."""
+
+    def get(self, request, definition_id):
+        try:
+            definition = JobDefinition.objects.get(id=definition_id)
+        except JobDefinition.DoesNotExist:
+            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(JobDefinitionDetailSerializer(definition).data)
+
+    def patch(self, request, definition_id):
+        try:
+            definition = JobDefinition.objects.get(id=definition_id)
+        except JobDefinition.DoesNotExist:
+            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        ser = JobDefinitionWriteSerializer(data=request.data)
+        if not ser.is_valid():
+            return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        new_name = (ser.validated_data.get('name') or '').strip()
+        if new_name and new_name != definition.name:
+            if JobDefinition.objects.filter(name=new_name).exclude(id=definition.id).exists():
+                return Response(
+                    {'name': 'A definition with this name already exists.'},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            definition.name = new_name
+        if 'description' in ser.validated_data:
+            definition.description = ser.validated_data['description']
+        if 'status' in ser.validated_data:
+            definition.status = ser.validated_data['status']
+        if 'data' in ser.validated_data:
+            merged = dict(definition.data or {})
+            for key, value in ser.validated_data['data'].items():
+                if value is None:
+                    merged.pop(key, None)
+                else:
+                    merged[key] = value
+            definition.data = merged
+        definition.save()
+        return Response(JobDefinitionDetailSerializer(definition).data)
 
 
 # ── Job Notification Subscriptions ───────────────────────────────────────────

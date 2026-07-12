@@ -2,13 +2,15 @@
 DRF serializers for the corun-ai REST API.
 """
 
+import uuid as uuid_lib
 from urllib.parse import urlparse
 
 from rest_framework import serializers
 
 from corun_app.models import (
+    MCP_SERVERS, MODEL_CHOICES, REMOTE_EXTRA_MCP_LABELS,
     Comment, Job, JobDefinition, JobNotificationSubscription, Page, PageTag,
-    Prompt, Section,
+    Prompt, Section, SystemPrompt,
 )
 
 
@@ -119,24 +121,126 @@ class PageTagsUpdateSerializer(serializers.Serializer):
     tags = serializers.ListField(child=serializers.CharField(allow_blank=False))
 
 
+class SectionCreateSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=200)
+    title = serializers.CharField(max_length=200)
+    description = serializers.CharField(required=False, allow_blank=True, default='')
+    data = serializers.JSONField(required=False, default=dict)
+
+
+class SystemPromptSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SystemPrompt
+        fields = [
+            'id', 'group_id', 'version', 'is_current', 'name', 'content',
+            'data', 'created_at', 'modified_at',
+        ]
+
+
+class SystemPromptCreateSerializer(serializers.Serializer):
+    """POST /api/v1/system-prompts/ — new group, or new version when
+    group_id references an existing group."""
+    name = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    content = serializers.CharField()
+    group_id = serializers.UUIDField(required=False, allow_null=True)
+    data = serializers.JSONField(required=False, default=dict)
+
+    def validate(self, attrs):
+        if not attrs.get('group_id') and not (attrs.get('name') or '').strip():
+            raise serializers.ValidationError(
+                {'name': 'name is required when creating a new system prompt group.'})
+        return attrs
+
+
 class JobDefinitionSerializer(serializers.ModelSerializer):
     class Meta:
         model = JobDefinition
         fields = ['id', 'name', 'description', 'status', 'created_at']
 
 
+class JobDefinitionDetailSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = JobDefinition
+        fields = [
+            'id', 'name', 'description', 'status', 'data',
+            'last_run_at', 'next_run_at', 'created_at', 'modified_at',
+        ]
+
+
+class JobDefinitionWriteSerializer(serializers.Serializer):
+    """POST/PATCH payload for JobDefinitions.
+
+    `data` carries the worker contract keys (model, effort, mcp_tools,
+    system_prompt_group_id, timeout_s). Known keys are validated; unknown
+    keys pass through. On PATCH the caller's `data` is merged key-by-key
+    into the stored data, and an explicit JSON null removes a key.
+    """
+    name = serializers.CharField(max_length=200, required=False)
+    description = serializers.CharField(required=False, allow_blank=True)
+    status = serializers.ChoiceField(
+        choices=['active', 'paused', 'archived'], required=False)
+    data = serializers.JSONField(required=False)
+
+    def validate_data(self, value):
+        if not isinstance(value, dict):
+            raise serializers.ValidationError('data must be a JSON object.')
+
+        model = value.get('model')
+        if model is not None:
+            valid_models = {m[0] for m in MODEL_CHOICES}
+            if model not in valid_models:
+                raise serializers.ValidationError(
+                    f'unknown model "{model}"; valid: {", ".join(sorted(valid_models))}.')
+
+        effort = value.get('effort')
+        if effort is not None and not isinstance(effort, str):
+            raise serializers.ValidationError('effort must be a string.')
+
+        mcp_tools = value.get('mcp_tools')
+        if mcp_tools is not None:
+            if not isinstance(mcp_tools, list):
+                raise serializers.ValidationError('mcp_tools must be a list of server keys.')
+            known = set(MCP_SERVERS) | set(REMOTE_EXTRA_MCP_LABELS)
+            unknown = [t for t in mcp_tools if t not in known]
+            if unknown:
+                raise serializers.ValidationError(
+                    f'unknown mcp_tools {unknown}; valid: {", ".join(sorted(known))}.')
+
+        sp_group = value.get('system_prompt_group_id')
+        if sp_group is not None:
+            try:
+                sp_uuid = uuid_lib.UUID(str(sp_group))
+            except (ValueError, AttributeError, TypeError):
+                raise serializers.ValidationError(
+                    'system_prompt_group_id must be a UUID.')
+            if not SystemPrompt.objects.filter(group_id=sp_uuid, is_current=True).exists():
+                raise serializers.ValidationError(
+                    f'no system prompt group {sp_group}.')
+
+        timeout_s = value.get('timeout_s')
+        if timeout_s is not None and (
+                isinstance(timeout_s, bool) or not isinstance(timeout_s, int) or timeout_s <= 0):
+            raise serializers.ValidationError('timeout_s must be a positive integer.')
+
+        return value
+
+
 class JobDetailSerializer(serializers.ModelSerializer):
     result_page_group_id = serializers.SerializerMethodField()
+    error = serializers.SerializerMethodField()
 
     class Meta:
         model = Job
         fields = [
-            'id', 'definition', 'prompt', 'status',
+            'id', 'definition', 'prompt', 'status', 'error',
             'result_page_group_id', 'data', 'created_at', 'modified_at',
         ]
 
     def get_result_page_group_id(self, obj):
         return obj.data.get('result_page_group_id') or obj.data.get('result_page_id')
+
+    def get_error(self, obj):
+        return obj.data.get('error')
 
 
 class PromptCreateSerializer(serializers.Serializer):
