@@ -14,6 +14,7 @@ import argparse
 import json
 import logging
 import os
+import signal
 import ssl
 import subprocess
 import sys
@@ -201,6 +202,32 @@ def _parse_codex_tokens(text):
             except ValueError:
                 return None
     return None
+
+
+def _kill_job_tree(proc, grace_s=10):
+    """Terminate a job subprocess and its whole process group (runner +
+    spawned MCP servers). SIGTERM the group, wait, then SIGKILL the group."""
+    try:
+        pgid = os.getpgid(proc.pid)
+    except Exception:
+        pgid = None
+    try:
+        if pgid is not None:
+            os.killpg(pgid, signal.SIGTERM)
+        else:
+            proc.terminate()
+        proc.wait(timeout=grace_s)
+    except subprocess.TimeoutExpired:
+        pass
+    except Exception:
+        pass
+    try:
+        if pgid is not None:
+            os.killpg(pgid, signal.SIGKILL)
+        else:
+            proc.kill()
+    except Exception:
+        pass
 
 
 def _read_job_stream(rj, filename):
@@ -449,10 +476,7 @@ class Worker:
                 time.sleep(1)
             for rj in list(self.running.values()):
                 _log('warning', f'Force-killing job {rj.job_id}')
-                try:
-                    rj.process.kill()
-                except Exception:
-                    pass
+                _kill_job_tree(rj.process, grace_s=2)
                 self._finish_job(rj, 'failed', 'Worker shutdown — job killed')
 
     def _pick_up_jobs(self):
@@ -699,6 +723,10 @@ class Worker:
             # pipe). Read back at completion in place of pipe reads.
             stdout_f = open(os.path.join(job_dir, 'stdout.log'), 'w')
             stderr_f = open(os.path.join(job_dir, 'stderr.log'), 'w')
+            # New session/process group: runner CLIs spawn MCP servers as
+            # children, and terminating only the runner orphans them (seen
+            # with xrootd servers surviving a Codex timeout kill). Group
+            # kills reap the whole tree.
             proc = subprocess.Popen(
                 cmd,
                 stdin=subprocess.PIPE,
@@ -707,6 +735,7 @@ class Worker:
                 text=True,
                 env=env,
                 cwd=job_dir,
+                start_new_session=True,
             )
             stdout_f.close()
             stderr_f.close()
@@ -763,13 +792,7 @@ class Worker:
                                  f'Failed to DELETE tjai entry {rj.tjai_entry_id}: {e}',
                                  job_id=job_id)
                     else:
-                        try:
-                            rj.process.terminate()
-                            rj.process.wait(timeout=5)
-                        except subprocess.TimeoutExpired:
-                            rj.process.kill()
-                        except Exception:
-                            pass
+                        _kill_job_tree(rj.process, grace_s=5)
                     self._finish_job(rj, 'cancelled', 'Aborted by user')
                     continue
             except Job.DoesNotExist:
@@ -782,10 +805,7 @@ class Worker:
                     except Exception:
                         pass
                 else:
-                    try:
-                        rj.process.kill()
-                    except Exception:
-                        pass
+                    _kill_job_tree(rj.process, grace_s=2)
                 del self.running[job_id]
                 continue
 
@@ -931,13 +951,7 @@ class Worker:
             elapsed = time.monotonic() - rj.started
             if elapsed > rj.timeout:
                 _log('warning', f'Job {job_id} timed out after {elapsed:.0f}s', job_id=job_id)
-                try:
-                    rj.process.terminate()
-                    rj.process.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    rj.process.kill()
-                except Exception:
-                    pass
+                _kill_job_tree(rj.process, grace_s=10)
                 self._finish_job(rj, 'failed', f'Timed out after {rj.timeout}s')
 
     def _complete_job(self, rj, content_md, elapsed, has_thinking=False, stderr=None, tokens=None):
