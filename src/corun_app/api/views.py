@@ -17,7 +17,10 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from corun_app.models import AppLog, Comment, Job, JobDefinition, Page, PageTag, Prompt, Section
+from corun_app.models import (
+    IMMUTABLE_ARTIFACT_TYPES,
+    AppLog, Comment, Job, JobDefinition, Page, PageTag, Prompt, Section,
+)
 from corun_app.models import JobNotificationSubscription, SystemPrompt
 
 from .serializers import (
@@ -329,6 +332,12 @@ class PageVersionListCreateView(APIView):
                 group_id=group_id, is_current=True).first()
             if current is None:
                 return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+            if (current.data or {}).get('artifact_type') in IMMUTABLE_ARTIFACT_TYPES:
+                return Response(
+                    {'detail': 'Immutable audit artifact: versioning is not permitted.'},
+                    status=status.HTTP_409_CONFLICT,
+                )
 
             current.is_current = False
             current.save(update_fields=['is_current', 'modified_at'])
