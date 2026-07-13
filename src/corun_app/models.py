@@ -70,10 +70,6 @@ REMOTE_EXTRA_MCP_LABELS = {
 # tj_agent.dispatcher actually wires up — that's the source of truth.
 REMOTE_FIXED_MCP_TOOLS = ['lxr', 'github', 'fetch', 'npp_search', 'web_search']
 
-# Artifact types that are immutable audit artifacts once created: no UI
-# curation and no API versioning. They are what they are.
-IMMUTABLE_ARTIFACT_TYPES = {'campaign_assessment_evidence_bundle'}
-
 # Available MCP servers: (key, label, config_dict)
 MCP_SERVERS = {
     'lxr': {

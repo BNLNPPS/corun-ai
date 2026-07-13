@@ -27,7 +27,10 @@ from corun_app.models import (
 logger = logging.getLogger(__name__)
 
 
-from corun_app.models import IMMUTABLE_ARTIFACT_TYPES
+# Artifact types treated as immutable audit artifacts: no UI edit/move/
+# delete/version actions for anyone (API creation by the owning service
+# is unaffected). Evidence bundles are the audit trail of assessments.
+IMMUTABLE_ARTIFACT_TYPES = {'campaign_assessment_evidence_bundle'}
 
 
 def _can_manage_page(user, page):
