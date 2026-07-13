@@ -156,23 +156,6 @@ MCP_SERVERS = {
             },
         },
     },
-    'rucio-bnl': {
-        'label': 'Rucio BNL (PanDA production data management)',
-        'config': {
-            'command': '/home/admin/github/rucio-eic-mcp-server/.venv/bin/rucio-eic-mcp',
-            'args': [],
-            'env': {
-                'RUCIO_URL': 'https://nprucio01.sdcc.bnl.gov:443',
-                'RUCIO_AUTH_TYPE': 'x509',
-                'RUCIO_ACCOUNT': 'panda',
-                'RUCIO_VO': 'eic',
-                'X509_USER_PROXY': config(
-                    'CORUN_RUCIO_BNL_X509_PROXY', default=''
-                ),
-                'TOKEN_FILE_PATH': '/tmp/rucio_eic_bnl_token.txt',
-            },
-        },
-    },
 }
 from django.db import models
 

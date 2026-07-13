@@ -203,6 +203,18 @@ def _parse_codex_tokens(text):
     return None
 
 
+def _read_job_stream(rj, filename):
+    """Read a per-job streamed output file; missing file reads as empty
+    (pre-streaming jobs in flight across a worker restart)."""
+    if not rj.job_dir:
+        return ''
+    try:
+        with open(os.path.join(rj.job_dir, filename)) as f:
+            return f.read()
+    except OSError:
+        return ''
+
+
 def _public_url(path):
     return dj_settings.PUBLIC_BASE_URL.rstrip('/') + path
 
@@ -682,15 +694,22 @@ class Worker:
 
         proc = None
         if not use_remote:
+            # Stream runner output to per-job files so a running job is
+            # inspectable mid-flight (and large transcripts cannot fill a
+            # pipe). Read back at completion in place of pipe reads.
+            stdout_f = open(os.path.join(job_dir, 'stdout.log'), 'w')
+            stderr_f = open(os.path.join(job_dir, 'stderr.log'), 'w')
             proc = subprocess.Popen(
                 cmd,
                 stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stdout=stdout_f,
+                stderr=stderr_f,
                 text=True,
                 env=env,
                 cwd=job_dir,
             )
+            stdout_f.close()
+            stderr_f.close()
             if not use_gemini:
                 proc.stdin.write(stdin_content)
             proc.stdin.close()
@@ -824,8 +843,8 @@ class Worker:
             retcode = rj.process.poll()
             if retcode is not None:
                 elapsed = time.monotonic() - rj.started
-                stdout = rj.process.stdout.read()
-                stderr = rj.process.stderr.read()
+                stdout = _read_job_stream(rj, 'stdout.log')
+                stderr = _read_job_stream(rj, 'stderr.log')
 
                 if rj.output_file:
                     try:

@@ -83,24 +83,24 @@ are required for any job to reach it; without either, every connect fails:
 
 ### Assessment MCP credentials
 
-The production-assessment definitions also select TJAI and BNL Rucio. Their
+The production-assessment definitions may also select TJAI and GitHub. Their
 credentials are worker-local configuration in `src/.env`:
 
 ```bash
 CORUN_TJAI_MCP_URL=https://etaverse.com/tjai/mcp/
 CORUN_TJAI_MCP_TOKEN=<TJAI MCP bearer>
-CORUN_RUCIO_BNL_X509_PROXY=/path/to/renewed/rucio/service-proxy
 CORUN_GITHUB_TOKEN=<GitHub service token>
 ```
 
-The BNL proxy must be a renewable service credential readable by the worker;
-do not point corun-ai at a developer's personal proxy. Restart the worker after
-changing these values. JLab Rucio uses the read-only account configured in the
-MCP registry. The assessor's GitHub service is a distinct `github-readonly`
-entry, so workflows using the existing writable `github` entry are unchanged.
-The new token is passed only to the read-only MCP subprocess; the existing
-service configuration is untouched. Its `--read-only` fence removes mutation
-tools while leaving the server's complete read-only surface available.
+Restart the worker after changing these values. The assessor's GitHub service
+is a distinct `github-readonly` entry, so workflows using the existing
+writable `github` entry are unchanged; its `--read-only` fence removes
+mutation tools while leaving the complete read-only surface available.
+
+Rucio access for assessments flows through the swf-testbed MCP service
+(`jlab_rucio_*` and `bnl_rucio_*` tools); Rucio credentials stay on the
+swf-testbed host. The local `rucio-jlab` registry entry (read-only JLab
+account) remains available for other job types.
 
 ### AI runner paths
 

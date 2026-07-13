@@ -607,10 +607,11 @@ class JobAbortView(APIView):
 
 
 class JobLogView(APIView):
-    """GET /api/v1/jobs/<job_id>/log/ — machine-readable run outcome: the
-    job's error, the runner's captured stderr (stored on the result page for
-    completed runs, embedded in `error` for failures), and the thinking
-    trace file when one was written."""
+    """GET /api/v1/jobs/<job_id>/log/ — machine-readable run outcome and
+    live progress: the job's error, the runner's stderr/stdout (streamed to
+    per-job files while the job runs, so a running job is inspectable
+    mid-flight), and the thinking trace file when one was written. For jobs
+    predating output streaming, stderr falls back to the result page copy."""
 
     def get(self, request, job_id):
         try:
@@ -623,20 +624,24 @@ class JobLogView(APIView):
             'status': job.status,
             'error': job.data.get('error'),
             'stderr': None,
+            'stdout': None,
             'thinking': None,
         }
-        page_group_id = job.data.get('result_page_group_id') or job.data.get('result_page_id')
-        if page_group_id:
-            page = Page.objects.filter(group_id=page_group_id, is_current=True).first()
-            if page:
-                payload['stderr'] = (page.data or {}).get('stderr') or None
+        job_dir = os.path.join(JOBS_DATA_DIR, str(job.id))
+        for field, filename in (('stderr', 'stderr.log'), ('stdout', 'stdout.log'),
+                                ('thinking', 'thinking.txt')):
+            try:
+                with open(os.path.join(job_dir, filename)) as f:
+                    payload[field] = f.read()
+            except OSError:
+                pass
 
-        thinking_path = os.path.join(JOBS_DATA_DIR, str(job.id), 'thinking.txt')
-        try:
-            with open(thinking_path) as f:
-                payload['thinking'] = f.read()
-        except OSError:
-            pass
+        if payload['stderr'] is None:
+            page_group_id = job.data.get('result_page_group_id') or job.data.get('result_page_id')
+            if page_group_id:
+                page = Page.objects.filter(group_id=page_group_id, is_current=True).first()
+                if page:
+                    payload['stderr'] = (page.data or {}).get('stderr') or None
         return Response(payload)
 
 
