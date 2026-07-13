@@ -288,6 +288,9 @@ def _job_notification_payload(job):
         'submitted_by': submitted_by,
         'result_page_group_id': page_group_id,
         'result_page_title': page_title,
+        'result_page_ui_visible': (
+            (page.data or {}).get('ui_visible', True) if page else None
+        ),
         'result_page_url': _public_url(f'/page/{page_group_id}/') if page_group_id else None,
         'job_api_url': _public_url(f'/api/v1/jobs/{job.id}/'),
         'error': job.data.get('error'),

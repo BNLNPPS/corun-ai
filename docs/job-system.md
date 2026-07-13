@@ -136,6 +136,7 @@ Callback payload:
   "submitted_by": "kalinkin",
   "result_page_group_id": "62a2e7c6-9e22-4dfa-bc9b-cc2aa80eebaf",
   "result_page_title": "ReconstructedParticle — A Physics Analyzer's Guide",
+  "result_page_ui_visible": true,
   "result_page_url": "https://epic-devcloud.org/doc/page/62a2e7c6-9e22-4dfa-bc9b-cc2aa80eebaf/",
   "job_api_url": "https://epic-devcloud.org/doc/api/v1/jobs/a28223d2-8a3c-4ff7-b28e-217edf12614c/",
   "timing": 301.2,
@@ -145,7 +146,10 @@ Callback payload:
 ```
 
 Failed or cancelled jobs omit result page fields and `timing` when unavailable,
-and include `error`.
+and include `error`. `result_page_ui_visible` is false when the result page
+carries the UI hide flag (`data.ui_visible=false`) — internal documents whose
+owning system does its own reporting. Subscribers relaying notices to human
+channels should skip those.
 
 ## JobDefinition
 
