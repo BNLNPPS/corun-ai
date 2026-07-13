@@ -304,20 +304,6 @@ def _post_job_notifications(job):
         if job.status not in {'completed', 'failed', 'cancelled'}:
             return
 
-        # Internal hidden documents are not reported to the bot at all: when
-        # the result page carries the UI hide flag (data.ui_visible=false),
-        # skip every subscription — the owning system carries its own
-        # reporting (e.g. epicprod's registrations to the epic-live channel).
-        page_group_id = job.data.get('result_page_group_id') or job.data.get('result_page_id')
-        if page_group_id:
-            from corun_app.models import Page
-            page = Page.objects.filter(group_id=page_group_id, is_current=True).first()
-            if page and (page.data or {}).get('ui_visible') is False:
-                _log('info',
-                     f'Job {job.id} result page is ui-hidden; skipping notifications',
-                     job_id=str(job.id))
-                return
-
         subscriptions = list(JobNotificationSubscription.objects.filter(status='active'))
         if not subscriptions:
             return
