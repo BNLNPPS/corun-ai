@@ -273,9 +273,6 @@ def _job_notification_payload(job):
     page_title = ''
     if page:
         page_title = page.data.get('title') or _extract_markdown_title(page.content)
-    submitted_by = ''
-    if job.prompt_id and job.prompt.submitted_by_id:
-        submitted_by = job.prompt.submitted_by.username
     payload = {
         'job_id': str(job.id),
         'status': job.status,
@@ -285,7 +282,6 @@ def _job_notification_payload(job):
         ),
         'prompt_id': str(job.prompt_id) if job.prompt_id else None,
         'prompt_group_id': str(job.prompt.group_id) if job.prompt_id else None,
-        'submitted_by': submitted_by,
         'result_page_group_id': page_group_id,
         'result_page_title': page_title,
         'result_page_ui_visible': (

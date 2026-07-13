@@ -133,7 +133,6 @@ Callback payload:
   "definition_name": "codoc-generate",
   "prompt_id": "e47844f8-deb2-4cd0-acad-9419ba0550c2",
   "prompt_group_id": "7b134427-85ba-467d-b39a-d3b55513bedf",
-  "submitted_by": "kalinkin",
   "result_page_group_id": "62a2e7c6-9e22-4dfa-bc9b-cc2aa80eebaf",
   "result_page_title": "ReconstructedParticle — A Physics Analyzer's Guide",
   "result_page_ui_visible": true,
