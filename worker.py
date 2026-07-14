@@ -267,6 +267,17 @@ def _result_page_for_job(job, page_group_id):
         return None
 
 
+def _page_ui_visible(page):
+    """UI visibility as the web UI computes it: hidden by the page's own
+    data.ui_visible=False, or by its section's data.ui_visible=False."""
+    if (page.data or {}).get('ui_visible', True) is False:
+        return False
+    section = page.section
+    if section and (section.data or {}).get('ui_visible', True) is False:
+        return False
+    return True
+
+
 def _job_notification_payload(job):
     page_group_id = job.data.get('result_page_group_id') or job.data.get('result_page_id')
     page = _result_page_for_job(job, page_group_id)
@@ -284,9 +295,7 @@ def _job_notification_payload(job):
         'prompt_group_id': str(job.prompt.group_id) if job.prompt_id else None,
         'result_page_group_id': page_group_id,
         'result_page_title': page_title,
-        'result_page_ui_visible': (
-            (page.data or {}).get('ui_visible', True) if page else None
-        ),
+        'result_page_ui_visible': _page_ui_visible(page) if page else None,
         'result_page_url': _public_url(f'/page/{page_group_id}/') if page_group_id else None,
         'job_api_url': _public_url(f'/api/v1/jobs/{job.id}/'),
         'error': job.data.get('error'),

@@ -145,10 +145,11 @@ Callback payload:
 ```
 
 Failed or cancelled jobs omit result page fields and `timing` when unavailable,
-and include `error`. `result_page_ui_visible` is false when the result page
-carries the UI hide flag (`data.ui_visible=false`) — internal documents whose
-owning system does its own reporting. Subscribers relaying notices to human
-channels should skip those.
+and include `error`. `result_page_ui_visible` is false when the result page is
+hidden from the web UI — by its own `data.ui_visible=false` or by belonging to
+a section with `data.ui_visible=false` — internal documents whose owning system
+does its own reporting. Subscribers relaying notices to human channels should
+skip those.
 
 ## JobDefinition
 
