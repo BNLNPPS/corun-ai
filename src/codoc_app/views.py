@@ -95,8 +95,12 @@ def _ui_visible_pages():
 
     Direct page URLs still work for hidden pages; this flag only prevents
     backend/integration documents from appearing automatically in the UI.
+    NULL-safe: exclude(data__ui_visible=False) drops key-missing rows too
+    (JSON three-valued logic), which emptied the browse UI entirely.
     """
-    return Page.objects.exclude(data__ui_visible=False)
+    return Page.objects.filter(
+        Q(data__ui_visible=True) | Q(data__ui_visible__isnull=True),
+    )
 
 
 def _ui_visible_sections():
