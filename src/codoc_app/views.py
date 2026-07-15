@@ -555,8 +555,10 @@ def prepare_prompt(request):
 def prompts_view(request):
     """Two-panel prompt library."""
     prompts = Prompt.objects.filter(
-        is_current=True
-    ).exclude(status='rejected').select_related('section').order_by('-created_at')
+        is_current=True, section__in=_ui_visible_sections(),
+    ).exclude(status='rejected').exclude(
+        data__ui_visible=False,
+    ).select_related('section').order_by('-created_at')
     return render(request, 'codoc_app/prompts.html', {'prompts': prompts})
 
 
