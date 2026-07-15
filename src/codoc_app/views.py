@@ -556,9 +556,7 @@ def prompts_view(request):
     """Two-panel prompt library."""
     prompts = Prompt.objects.filter(
         is_current=True, section__in=_ui_visible_sections(),
-    ).exclude(status='rejected').exclude(
-        data__ui_visible=False,
-    ).select_related('section').order_by('-created_at')
+    ).exclude(status='rejected').select_related('section').order_by('-created_at')
     return render(request, 'codoc_app/prompts.html', {'prompts': prompts})
 
 
@@ -708,7 +706,9 @@ def page_detail(request, group_id):
 def queue(request):
     """Job queue: running and completed jobs."""
     visible_jobs = Q(data__queue_hidden=False) | Q(data__queue_hidden__isnull=True)
-    jobs = Job.objects.filter(visible_jobs).select_related(
+    jobs = Job.objects.filter(visible_jobs).exclude(
+        prompt__section__in=Section.objects.filter(data__ui_visible=False),
+    ).select_related(
         'definition', 'prompt',
     ).order_by('-created_at')[:100]
     active = [j for j in jobs if j.status in ('queued', 'running')]
@@ -725,7 +725,9 @@ def queue_status_api(request):
     from django.utils import timezone as tz
 
     visible_jobs = Q(data__queue_hidden=False) | Q(data__queue_hidden__isnull=True)
-    jobs = list(Job.objects.filter(visible_jobs).select_related(
+    jobs = list(Job.objects.filter(visible_jobs).exclude(
+        prompt__section__in=Section.objects.filter(data__ui_visible=False),
+    ).select_related(
         'definition', 'prompt__submitted_by', 'triggered_by',
     ).order_by('-created_at')[:50])
 
