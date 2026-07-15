@@ -86,6 +86,14 @@ Claude receives a job-local `.mcp.json`. Codex receives equivalent
 `-c mcp_servers...` overrides so it does not load the user's full Codex
 configuration.
 
+Claude jobs also receive `--settings` with a PreToolUse hook
+(`scripts/claude_subagent_cap.py`) that hard-blocks subagent (Agent/Task tool)
+spawns past `CORUN_MAX_SUBAGENTS` (default 3), counted per session in a
+flock-guarded `/tmp` file. Prompt-level subagent limits are not enforcement,
+and Claude Code has no built-in numeric cap; the hook is the enforcement
+point. Host protection: an uncapped claude run exhausted this host's memory
+on 2026-07-15.
+
 ### Subprocess Environment
 
 Each local subprocess runs with:

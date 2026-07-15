@@ -661,6 +661,27 @@ class Worker:
                 # (Haiku in particular) self-censor and refuse to call
                 # MCP tools even with --allowedTools mcp__*.
                 '--permission-mode', 'bypassPermissions',
+                # Hard subagent cap via PreToolUse hook (scripts/
+                # claude_subagent_cap.py, CORUN_MAX_SUBAGENTS, default 3).
+                # Prompt-level limits are not enforcement: a 2026-07-15 tjai
+                # research run capped at 3 by prompt spawned 74 subagents and
+                # exhausted host memory. Claude Code has no built-in numeric
+                # subagent cap; PreToolUse is the enforcement point.
+                '--settings', json.dumps({
+                    'hooks': {
+                        'PreToolUse': [{
+                            'matcher': 'Agent|Task',
+                            'hooks': [{
+                                'type': 'command',
+                                'command': (
+                                    f'{sys.executable} '
+                                    f'{os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts", "claude_subagent_cap.py")}'
+                                ),
+                                'timeout': 10,
+                            }],
+                        }],
+                    },
+                }),
             ]
             # Reasoning effort — passes through to the model's thinking
             # budget. Previously this JobDefinition field was stored but
