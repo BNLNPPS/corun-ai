@@ -26,7 +26,7 @@
 
     <!-- User prompt. For PR-review prompts, render as a single
          clickable "PR #<N>: <title>" link to the GitHub PR. -->
-    {% with raw=page.data.prompt_content|default:page.prompt.content %}
+    {% firstof page.data.prompt_content page.prompt.content as raw %}
     {% if raw %}
         {% with link=raw|prompt_url title=raw|prompt_title %}
         {% if link %}
@@ -36,7 +36,6 @@
         {% endif %}
         {% endwith %}
     {% endif %}
-    {% endwith %}
 
     {% if page.data.has_thinking %}
     <div style="margin-bottom:8px">

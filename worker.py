@@ -407,6 +407,7 @@ class RunningJob:
         self.remote_model = remote_model
         self.next_poll = 0.0
         self.output_file = output_file
+        self.exited_at = None  # first time we saw the process exited
 
 
 class Worker:
@@ -891,8 +892,26 @@ class Worker:
             # Completed?
             retcode = rj.process.poll()
             if retcode is not None:
-                elapsed = time.monotonic() - rj.started
                 stdout = _read_job_stream(rj, 'stdout.log')
+                # Exit-to-write race: the CLI's final output can become
+                # visible in the job files shortly after the process exits
+                # (a clean 6-minute fable run was lost to this, 2026-07-15).
+                # On a clean exit with nothing readable yet, allow up to 10s
+                # for the output to settle before judging the job.
+                if retcode == 0 and not stdout.strip():
+                    output_ready = False
+                    if rj.output_file:
+                        try:
+                            with open(rj.output_file) as f:
+                                output_ready = bool(f.read().strip())
+                        except OSError:
+                            pass
+                    if not output_ready:
+                        if rj.exited_at is None:
+                            rj.exited_at = time.monotonic()
+                        if time.monotonic() - rj.exited_at < 10:
+                            continue
+                elapsed = time.monotonic() - rj.started
                 stderr = _read_job_stream(rj, 'stderr.log')
 
                 if rj.output_file:

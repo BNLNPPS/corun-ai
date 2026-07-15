@@ -28,7 +28,7 @@
         <div style="font-size:13px;color:var(--grey);margin-bottom:6px">Generated pages:</div>
         {% for pg in pages %}
         <div style="font-size:13px;margin-bottom:3px">
-            <a href="#" onclick="event.preventDefault();selectPageInTree('{{ pg.group_id }}')" style="color:#90caf9">{{ pg.data.definition_name|default:pg.data.generation_model|default:"page" }}</a>
+            <a href="#" onclick="event.preventDefault();selectPageInTree('{{ pg.group_id }}')" style="color:#90caf9">{% firstof pg.data.definition_name pg.data.generation_model "page" %}</a>
             <span style="color:var(--grey)"> · {{ pg.created_at|date:"M j H:i" }}{% if pg.data.generation_time_s %} · {{ pg.data.generation_time_s }}s{% endif %}</span>
         </div>
         {% endfor %}
@@ -74,7 +74,7 @@
         <h4 style="font-size:13px;color:var(--accent);margin-top:16px;margin-bottom:8px">Comments on generated pages</h4>
         {% for pg, pg_comments in page_comments_grouped %}
         <div style="margin-bottom:12px">
-            <a href="#" onclick="event.preventDefault();selectPageInTree('{{ pg.group_id }}')" style="font-size:13px;color:#90caf9">{{ pg.data.definition_name|default:pg.data.generation_model|default:"page" }} · {{ pg.created_at|date:"M j H:i" }}</a>
+            <a href="#" onclick="event.preventDefault();selectPageInTree('{{ pg.group_id }}')" style="font-size:13px;color:#90caf9">{% firstof pg.data.definition_name pg.data.generation_model "page" %} · {{ pg.created_at|date:"M j H:i" }}</a>
             {% for c in pg_comments %}
             <div style="margin-top:6px;margin-left:12px;padding:8px 10px;background:var(--code-bg);border-radius:4px">
                 <div style="font-size:12px;color:var(--grey);margin-bottom:4px">

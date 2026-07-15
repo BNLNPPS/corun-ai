@@ -27,7 +27,7 @@
                 · re <a href="{% url 'codoc:home' %}?t=prompt&id={% firstof c.prompt_group c.prompt_group_resolved %}" style="color:var(--accent)">{{ c.prompt_label }}</a>
                 {% endif %}
                 {% if c.page %}
-                · on <a href="{% url 'codoc:home' %}?t=page&id={{ c.page.group_id }}" style="color:#90caf9">{{ c.page.data.definition_name|default:c.page.data.generation_model|default:"page" }}</a>
+                · on <a href="{% url 'codoc:home' %}?t=page&id={{ c.page.group_id }}" style="color:#90caf9">{% firstof c.page.data.definition_name c.page.data.generation_model "page" %}</a>
                 {% endif %}
                 {% if user.is_authenticated and user == c.author %}
                 <a href="#" onclick="event.preventDefault();deleteComment('{{ c.id }}')" style="color:var(--grey);margin-left:8px" title="Delete">✕</a>
