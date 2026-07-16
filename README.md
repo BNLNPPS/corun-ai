@@ -220,7 +220,9 @@ The worker is a persistent daemon managed by supervisord. It:
 See [docs/deployment.md](docs/deployment.md) for operations guide.
 
 ```bash
-# Deploy code changes (safe — does not affect running jobs)
+# Deploy: rsync + collectstatic + Apache reload + worker restart.
+# Refuses to run while jobs are queued or running (the restart would
+# orphan them); --force deploys anyway.
 ./deploy/update_from_dev.sh
 
 # Restart job worker

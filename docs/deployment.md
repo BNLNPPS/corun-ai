@@ -32,17 +32,17 @@ Runs `/var/www/corun-ai/worker.py` and polls for queued jobs.
 ## Deploy Procedure
 
 ```bash
-# 1. Deploy code (safe — does not affect running jobs)
+# 1. Deploy code. The script rsyncs, runs collectstatic, reloads Apache,
+#    and restarts the worker. It refuses to run while jobs are queued or
+#    running — the worker restart would orphan them (worker.py marks any
+#    queued/running job failed on startup). --force deploys anyway,
+#    killing those jobs.
 cd /home/admin/github/corun-ai
 ./deploy/update_from_dev.sh
 
 # 2. If models changed, run migrations
 cd /var/www/corun-ai
 .venv/bin/python src/manage.py migrate
-
-# 3. If generation code changed, restart worker
-# (wait for running jobs to finish first)
-sudo supervisorctl restart corun-worker
 ```
 
 ## Worker configuration & secrets
@@ -178,13 +178,15 @@ print('Token deleted.')
 ```
 
 The deploy script:
-1. rsync code to `/var/www/corun-ai/` (excludes .venv, .git, __pycache__)
-2. Fix permissions for Apache
-3. collectstatic
-4. Touch `wsgi_subpath.py` to trigger mod_wsgi reload
-5. `systemctl reload apache2`
+1. Refuse to run if any job is queued or running (`--force` overrides)
+2. rsync code to `/var/www/corun-ai/` (excludes .venv, .git, __pycache__)
+3. Fix permissions for Apache
+4. collectstatic
+5. Touch `wsgi_subpath.py` to trigger mod_wsgi reload
+6. `systemctl reload apache2`
+7. `supervisorctl restart corun-worker`
 
-**IMPORTANT:** Apache reload is safe — it only affects the web UI, not running jobs. The worker is a separate process.
+**IMPORTANT:** Apache reload is safe — it only affects the web UI, not running jobs. The worker restart is not: worker.py marks any queued/running job failed on startup, which is why the script refuses to deploy while such jobs exist.
 
 ## Supervisord Setup
 
