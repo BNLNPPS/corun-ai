@@ -387,7 +387,7 @@ class RunningJob:
     """
     __slots__ = ('job_id', 'prompt_id', 'job_def_id', 'process', 'timeout', 'started',
                  'use_gemini', 'use_remote', 'output_json', 'job_dir', 'tjai_entry_id',
-                 'remote_model', 'next_poll', 'output_file')
+                 'remote_model', 'next_poll', 'output_file', 'exited_at')
 
     def __init__(self, job_id, prompt_id, job_def_id, process, timeout,
                  use_gemini=False, job_dir=None, use_remote=False,
