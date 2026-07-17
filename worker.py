@@ -787,7 +787,12 @@ class Worker:
                 and model not in CODEX_MODELS
                 and model not in DEEPSEEK_MODELS
             ),
-            job_dir=job_dir if use_gemini else None,
+            # Every local job streams stdout/stderr into job_dir and is
+            # read back from there at completion — job_dir=None here made
+            # _read_job_stream return '' forever for claude/deepseek jobs
+            # (silent since c3e5c60; 2026-07-15 fable and 2026-07-16 opus
+            # runs lost their output to it).
+            job_dir=None if use_remote else job_dir,
             tjai_entry_id=tjai_entry_id if use_remote else None,
             remote_model=model if use_remote else None,
             output_file=output_file,
@@ -893,11 +898,11 @@ class Worker:
             retcode = rj.process.poll()
             if retcode is not None:
                 stdout = _read_job_stream(rj, 'stdout.log')
-                # Exit-to-write race: the CLI's final output can become
-                # visible in the job files shortly after the process exits
-                # (a clean 6-minute fable run was lost to this, 2026-07-15).
                 # On a clean exit with nothing readable yet, allow up to 10s
-                # for the output to settle before judging the job.
+                # for output to settle before judging the job. (The 2026-07-15
+                # fable-run loss that motivated this was actually the
+                # job_dir=None read bug fixed at RunningJob construction —
+                # kept as cheap insurance for genuinely slow file settling.)
                 if retcode == 0 and not stdout.strip():
                     output_ready = False
                     if rj.output_file:
