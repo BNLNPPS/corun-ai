@@ -25,6 +25,8 @@ MODEL_CHOICES = [
     ('claude-sonnet-4-6', 'Sonnet 4.6 (pinned)', 'Claude'),
     ('haiku', 'Haiku (latest)', 'Claude'),
     ('claude-haiku-4-5', 'Haiku 4.5 (pinned)', 'Claude'),
+    ('gemini-3.6-flash-medium', 'Gemini 3.6 Flash (Medium)', 'Gemini'),
+    ('gemini-3.6-flash-high', 'Gemini 3.6 Flash (High)', 'Gemini'),
     ('gemini-3.5-flash-low', 'Gemini 3.5 Flash (Low)', 'Gemini'),
     ('gemini-3.5-flash-medium', 'Gemini 3.5 Flash (Medium)', 'Gemini'),
     ('gemini-3.5-flash-high', 'Gemini 3.5 Flash (High)', 'Gemini'),

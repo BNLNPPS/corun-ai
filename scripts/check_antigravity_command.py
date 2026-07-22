@@ -34,7 +34,7 @@ def check(label, cond, detail=''):
 
 cmd = build_antigravity_command(
     '/home/admin/.local/bin/agy',
-    'gemini-3.1-pro-high',
+    'gemini-3.6-flash-high',
     'Prompt body',
     timeout_s=120,
 )
@@ -53,14 +53,18 @@ check('skips interactive permissions',
       '--dangerously-skip-permissions' in cmd,
       cmd)
 check('selects mapped model',
-      '--model' in cmd and 'Gemini 3.1 Pro (High)' in cmd,
+      '--model' in cmd and 'Gemini 3.6 Flash (High)' in cmd,
       cmd)
 check('sets print timeout',
       '--print-timeout' in cmd and '120s' in cmd,
       cmd)
 
 print('\n[group] Model aliases')
+check('maps current flash medium',
+      antigravity_model_name('gemini-3.6-flash-medium') == 'Gemini 3.6 Flash (Medium)')
 check('maps current flash high',
+      antigravity_model_name('gemini-3.6-flash-high') == 'Gemini 3.6 Flash (High)')
+check('retains Gemini 3.5 flash',
       antigravity_model_name('gemini-3.5-flash-high') == 'Gemini 3.5 Flash (High)')
 check('maps legacy pro',
       'Gemini 3.1 Pro (High)' in legacy_cmd,

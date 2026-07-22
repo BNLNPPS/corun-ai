@@ -2,6 +2,8 @@
 
 
 ANTIGRAVITY_MODEL_MAP = {
+    'gemini-3.6-flash-medium': 'Gemini 3.6 Flash (Medium)',
+    'gemini-3.6-flash-high': 'Gemini 3.6 Flash (High)',
     'gemini-3.5-flash-low': 'Gemini 3.5 Flash (Low)',
     'gemini-3.5-flash-medium': 'Gemini 3.5 Flash (Medium)',
     'gemini-3.5-flash-high': 'Gemini 3.5 Flash (High)',
